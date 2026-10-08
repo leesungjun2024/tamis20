@@ -1,0 +1,8 @@
+﻿tamis2@ D:\tamis2
+?쒋?? @supabase/supabase-js@2.117.2
+?쒋?? lucide-react@1.52.0
+?쒋?? react-dom@19.3.0
+?쒋?? react@19.3.0
+?쒋?? vite@8.3.3
+?붴?? wavesurfer.js@8.0.1
+
