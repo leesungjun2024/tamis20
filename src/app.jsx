@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient';
 
 export default function App() {
   // 인증(Login) 상태
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(null);   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
