@@ -230,7 +230,7 @@ export default function AudioPlayerWithComments() {
 
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 space-y-4">
         <h3 className="text-lg font-bold text-gray-800">🎚️ 트랙 구성 및 순서 설정</h3>
-        <div className="space-y-2">
+        <div className="space-y-2"> 
           {tracks.map((track, index) => (
             <div key={track.id} className={`flex items-center justify-between p-3 rounded-lg border ${index === currentTrackIndex ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 bg-white'}`}>
               <div className="flex items-center space-x-3">
