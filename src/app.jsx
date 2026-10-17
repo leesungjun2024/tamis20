@@ -3,7 +3,7 @@ import WaveSurfer from 'wavesurfer.js';
 import { supabase } from './supabaseClient'; 
 
 export default function App() {
-  // 1. 인증(Login) 상태 
+  // 1.  인증(Login) 상태 
   const [user, setUser] = useState(null);   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
