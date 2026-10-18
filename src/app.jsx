@@ -2768,7 +2768,7 @@ export default function App() {
                                       <span style={{ fontSize: '9px', color: '#94a3b8' }}>{new Date(r.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                                       {(isReplyAuthor || canManageFeedback) && (
                                         <button onClick={() => handleDeleteComment(r)} style={{ fontSize: '9px', background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontWeight: 'bold', padding: 0 }}>
-                                          삭제
+                                          삭제 
                                         </button>
                                       )}
                                     </div>
