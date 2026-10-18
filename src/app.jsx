@@ -39,7 +39,7 @@ export default function App() {
   const [newAdminRole, setNewAdminRole] = useState('portfolio_admin');
   const [newAdminName, setNewAdminName] = useState('');
 
-  // 관리자 정보 수정 및 권한 상세 설정 모달/인라인 편집 상태 (확장성 구현)
+  // 관리자 정보 수정 및 권한 상세 설정 상태
   const [editingAdminId, setEditingAdminId] = useState(null);
   const [editAdminName, setEditAdminName] = useState('');
   const [editAdminRole, setEditAdminRole] = useState('portfolio_admin');
@@ -124,6 +124,11 @@ export default function App() {
     return isRegisteredAdmin || userEmail === 'admin@admin.com' || userEmail.startsWith('admin') || userEmail === 'krsungjun@gmail.com';
   };
 
+  // 현재 접속 유저의 관리자 정보 및 권한 등급 추출
+  const currentAdminInfo = user ? adminList.find(a => a.email.toLowerCase() === user.email.toLowerCase()) : null;
+  const adminRole = currentAdminInfo?.role || (isAdmin ? 'system_admin' : 'user');
+  const adminPerms = currentAdminInfo?.permissions || { portfolio: 'all', track: 'all', feedback: 'all' };
+
   const recordLoginLog = async (userEmail) => {
     try {
       let ip = 'Unknown IP';
@@ -188,14 +193,12 @@ export default function App() {
     }
   };
 
-  // Supabase에서 관리자 목록 불러오기
   const fetchAdminsFromDB = async () => {
     try {
       const { data, error } = await supabase.from('admins').select('*').order('created_at', { ascending: true });
       if (!error && data && data.length > 0) {
         setAdminList(data);
       } else {
-        // 테이블이 아직 없거나 비어있는 경우 기본값 설정
         setAdminList([
           { id: 1, email: 'krsungjun@gmail.com', role: 'system_admin', name: '김성준 (시스템총괄)', permissions: { portfolio: 'all', track: 'all', feedback: 'all' } },
           { id: 2, email: 'admin@admin.com', role: 'system_admin', name: '최고관리자', permissions: { portfolio: 'all', track: 'all', feedback: 'all' } },
@@ -427,6 +430,16 @@ export default function App() {
   };
 
   const handleToggleViewYn = async (table, id, currentVal) => {
+    let permKey = 'portfolio';
+    if (table === 'tracks') permKey = 'track';
+    if (table === 'feedbacks') permKey = 'feedback';
+
+    const userPerm = adminPerms[permKey] || 'read';
+    if (userPerm === 'read' || userPerm === 'none') {
+      alert('⚠️ 해당 항목을 수정할 수 있는 권한이 없습니다 (읽기 전용).');
+      return;
+    }
+
     const nextVal = currentVal === 'N' ? 'Y' : 'N';
     const { error } = await supabase
       .from(table)
@@ -443,6 +456,15 @@ export default function App() {
 
   const handleDeleteCurrentPortfolio = async () => {
     if (!currentPortfolioId) return;
+
+    const isOwner = user?.email && portfolioOwnerEmail && 
+      user.email.trim().toLowerCase() === portfolioOwnerEmail.trim().toLowerCase();
+
+    if (!isOwner && adminPerms.portfolio !== 'all') {
+      alert('⚠️ 포트폴리오 삭제는 소유자 또는 최고 관리자 권한이 필요합니다.');
+      return;
+    }
+
     if (!window.confirm(`정말 "${portfolioName}" 포트폴리오를 삭제하시겠습니까?`)) return;
 
     const { error } = await supabase
@@ -461,6 +483,12 @@ export default function App() {
   };
 
   const handleDeleteTrack = async (trackId, trackName) => {
+    const canEditTrack = ['all', 'read_write'].includes(adminPerms.track) || !isAdmin;
+    if (!canEditTrack) {
+      alert('⚠️ 음원을 삭제할 권한이 없습니다.');
+      return;
+    }
+
     if (!window.confirm(`정말 "${trackName}" 음원을 삭제하시겠습니까?`)) return;
 
     if (wavesurferRefs.current[trackId]) {
@@ -794,6 +822,12 @@ export default function App() {
   };
 
   const handleMoveTrackOrder = async (index, direction) => {
+    const canEditTrack = ['all', 'read_write'].includes(adminPerms.track) || !isAdmin;
+    if (!canEditTrack) {
+      alert('⚠️ 음원 순서를 변경할 권한이 없습니다.');
+      return;
+    }
+
     const sortedTracks = [...tracks].sort((a, b) => (a.order || 0) - (b.order || 0));
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
 
@@ -838,6 +872,12 @@ export default function App() {
   };
 
   const handleMultipleUpload = async (e) => {
+    const canEditTrack = ['all', 'read_write'].includes(adminPerms.track) || !isAdmin;
+    if (!canEditTrack) {
+      alert('⚠️ 음원을 업로드할 권한이 없습니다.');
+      return;
+    }
+
     const files = Array.from(e.target.files);
     if (files.length === 0 || !currentPortfolioId) {
       alert('포트폴리오를 먼저 열어주세요!');
@@ -954,13 +994,21 @@ export default function App() {
     }
   };
 
-  const handleDeleteComment = async (commentId) => {
+  const handleDeleteComment = async (comment) => {
+    const isAuthor = comment.user_id === user.id;
+    const canManageFeedback = ['all', 'read_write'].includes(adminPerms.feedback);
+
+    if (!isAuthor && !canManageFeedback) {
+      alert('⚠️ 본인의 피드백만 삭제하거나 관리자 피드백 삭제 권한이 필요합니다.');
+      return;
+    }
+
     if (!window.confirm('정말 이 피드백을 삭제하시겠습니까?')) return;
 
     const { error } = await supabase
       .from('feedbacks')
       .update({ del_yn: 'Y' })
-      .eq('id', commentId);
+      .eq('id', comment.id);
 
     if (error) {
       alert('삭제 실패: ' + error.message);
@@ -1048,10 +1096,8 @@ export default function App() {
   const filteredFeedbacks = filterByDashboardRange(allFeedbacksAdmin.filter(f => f.del_yn !== 'Y'), 'created_at');
   const filteredLogs = filterByDashboardRange(loginLogs, 'login_time');
 
-  // 현재 접속자 필터링 (logout_time이 없는 항목)
   const activeUsersList = loginLogs.filter(l => !l.logout_time);
 
-  // 접속자 강제 종료 기능 핸들러
   const handleForceLogoutUser = async (logId, userEmail) => {
     if (!window.confirm(`정말 "${userEmail}" 사용자의 접속 세션을 강제 종료하시겠습니까?`)) return;
 
@@ -1068,9 +1114,13 @@ export default function App() {
     }
   };
 
-  // Supabase DB 연동: 관리자 추가 핸들러 (등급 및 정원 제한 검사)
   const handleAddAdmin = async (e) => {
     e.preventDefault();
+    if (adminRole !== 'system_admin') {
+      alert('⚠️ 시스템 관리자만 신규 관리자를 추가할 수 있습니다.');
+      return;
+    }
+
     const trimmedEmail = newAdminEmail.trim();
     if (!trimmedEmail) return;
 
@@ -1113,8 +1163,12 @@ export default function App() {
     }
   };
 
-  // Supabase DB 연동: 관리자 삭제 핸들러
   const handleDeleteAdmin = async (id, email) => {
+    if (adminRole !== 'system_admin') {
+      alert('⚠️ 시스템 관리자만 관리자를 해제할 수 있습니다.');
+      return;
+    }
+
     if (adminList.length <= 1) {
       alert('최소 1명의 관리자는 유지되어야 합니다.');
       return;
@@ -1131,15 +1185,17 @@ export default function App() {
     }
   };
 
-  // 관리자 정보 수정 시작
   const handleStartEditAdmin = (admin) => {
+    if (adminRole !== 'system_admin') {
+      alert('⚠️ 시스템 관리자만 권한 등급을 수정할 수 있습니다.');
+      return;
+    }
     setEditingAdminId(admin.id);
     setEditAdminName(admin.name);
     setEditAdminRole(admin.role);
     setEditPermissions(admin.permissions || { portfolio: 'all', track: 'all', feedback: 'all' });
   };
 
-  // Supabase DB 연동: 관리자 정보 및 권한 수정 저장
   const handleSaveEditAdmin = async (id) => {
     const portfolioAdminCount = adminList.filter(a => a.role === 'portfolio_admin' && a.id !== id).length;
     const systemAdminCount = adminList.filter(a => a.role === 'system_admin' && a.id !== id).length;
@@ -1171,7 +1227,6 @@ export default function App() {
     }
   };
 
-  // 로그인 이력 조회 페이지 전용 검색 필터 적용 함수
   const applyLoginHistoryFilter = () => {
     let result = loginLogs;
 
@@ -1210,6 +1265,16 @@ export default function App() {
       const keyword = portfolioSearchName.trim().toLowerCase();
       result = result.filter(item => (item.portfolio_name || '').toLowerCase().includes(keyword));
     }
+    if (portfolioFromDate && portfolioToDate) {
+      const fDate = new Date(portfolioFromDate);
+      const tDate = new Date(portfolioToDate);
+      tDate.setHours(23, 59, 59, 999);
+      result = result.filter(item => {
+        if (!item.created_at) return false;
+        const cDate = new Date(item.created_at);
+        return cDate >= fDate && cDate <= tDate;
+      });
+    }
     return result.slice(0, portfolioLimitCount);
   };
 
@@ -1219,6 +1284,16 @@ export default function App() {
       const keyword = trackSearchName.trim().toLowerCase();
       result = result.filter(item => (item.track_name || '').toLowerCase().includes(keyword));
     }
+    if (trackFromDate && trackToDate) {
+      const fDate = new Date(trackFromDate);
+      const tDate = new Date(trackToDate);
+      tDate.setHours(23, 59, 59, 999);
+      result = result.filter(item => {
+        if (!item.created_at) return false;
+        const cDate = new Date(item.created_at);
+        return cDate >= fDate && cDate <= tDate;
+      });
+    }
     return result.slice(0, trackLimitCount);
   };
 
@@ -1227,6 +1302,16 @@ export default function App() {
     if (feedbackSearchName.trim()) {
       const keyword = feedbackSearchName.trim().toLowerCase();
       result = result.filter(item => (item.content || '').toLowerCase().includes(keyword));
+    }
+    if (feedbackFromDate && feedbackToDate) {
+      const fDate = new Date(feedbackFromDate);
+      const tDate = new Date(feedbackToDate);
+      tDate.setHours(23, 59, 59, 999);
+      result = result.filter(item => {
+        if (!item.created_at) return false;
+        const cDate = new Date(item.created_at);
+        return cDate >= fDate && cDate <= tDate;
+      });
     }
     return result.slice(0, feedbackLimitCount);
   };
@@ -1306,69 +1391,6 @@ export default function App() {
   const rootComments = comments.filter(c => !c.parent_id);
   const getReplies = (parentId) => comments.filter(c => c.parent_id === parentId);
 
-  // 경쟁사별 UI 특징 및 장단점 분석 데이터 구조
-  const competitorDetailList = [
-    {
-      name: 'SoundBetter',
-      uiFeatures: '전문가 프로필 카드 중심의 깔끔한 그리드 레이아웃. 트랙별 오디오 플레이어와 마커가 상단에 고정되어 검색과 샘플 청취가 유기적임.',
-      imageDescription: '참고 화면: 엔지니어/프로듀서 프로필 그리드 및 오디오 샘플 플레이어가 결합된 마켓플레이스 UI',
-      pros: [
-        '세계 최대 규모의 프로페셔널 엔지니어/음악가 인프라',
-        'Spotify 기반 신뢰할 수 있는 구인/구직 매칭 UI',
-        '에스크로 결제 시스템 통합으로 높은 거래 안전성'
-      ],
-      cons: [
-        '실시간 웹 기반 멀티트랙 동시 편집 및 정밀 스튜디오 기능 부재',
-        'Pro 등급 월 구독 비용 및 거래 수수료 발생',
-        '초보 크리에이터 접근 장벽 존재'
-      ]
-    },
-    {
-      name: 'Audiio',
-      uiFeatures: '다크 모드 중심의 시네마틱 오디오 플레이어 UI. 웨이브폼 비주얼라이저와 필터링 사이드바가 직관적으로 배치됨.',
-      imageDescription: '참고 화면: 다크모드 기반의 시네마틱 오디오 플레이어 및 라이선스 필터 사이드바 UI',
-      pros: [
-        '음원 라이선스 구매 및 사용 과정이 매우 간결한 인터페이스',
-        '빠른 오디오 로딩 속도와 직관적인 장르/태그 탐색 시스템',
-        '영상 제작자 및 유튜버 친화적 컬렉션 관리 기능'
-      ],
-      cons: [
-        '사용자 간 타임라인 피드백 및 대댓글 기능 미지원',
-        '멀티트랙 개별 음소거/순차 재생 기능 없음',
-        '단순 음원 다운로드에 특화되어 있어 협업 스튜디오 기능 부족'
-      ]
-    },
-    {
-      name: 'BandLab',
-      uiFeatures: '웹 DAW(Digital Audio Workstation) 스타일의 가로 타임라인 레이아웃. 소셜 피드와 트랙 편집기가 결합된 하이브리드 UI.',
-      imageDescription: '참고 화면: 브라우저 기반 DAW 멀티트랙 에디터 및 소셜 커뮤니티 피드 복합 UI',
-      pros: [
-        '브라우저에서 직접 멀티트랙 녹음 및 AI 마스터링 가능',
-        '강력한 글로벌 음악인 커뮤니티 및 소셜 공유 기능',
-        '전면 무료 제공으로 초기 유입에 강력함'
-      ],
-      cons: [
-        '기능이 과도하게 많아 단순 피드백 및 포트폴리오 관리시 UI 복잡도 상승',
-        '초 단위 피드백 코멘트 관리 시 시각적 시퀀스 직관성 다소 떨어짐',
-        '고음질 대용량 오디오 보관 시 일부 렌더링 지연 발생'
-      ]
-    },
-    {
-      name: '우리 플랫폼 (현재)',
-      uiFeatures: '포트폴리오 중심의 멀티트랙 스튜디오 레이아웃. 초단위 정밀 파동 피드백과 반응형 타임라인 대시보드 통합 UI.',
-      imageDescription: '참고 화면: 사용자 제공 매트릭스 및 실시간 멀티트랙 웨이브폼 피드백 통합 인터페이스',
-      pros: [
-        '웨이브폼 클릭을 통한 정확한 초단위(Start/End) 타임스탬프 피드백',
-        '전체재생 및 순차재생 모드, 트랙별 음소거/순서 변경 완벽 지원',
-        '관리자 모니터링, 세분화된 대시보드, 팀원 초대 및 권한 통합'
-      ],
-      cons: [
-        '웹 브라우저 내 DAW급 실시간 이펙터/녹음 기능 미지원 (현재 지원 예정)',
-        '마켓플레이스 연동 결제 모델 구축 단계'
-      ]
-    }
-  ];
-
   if (!user) {
     return (
       <div style={{ maxWidth: '400px', margin: '80px auto', padding: '30px', background: '#fff', borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', fontFamily: 'sans-serif' }}>
@@ -1396,9 +1418,14 @@ export default function App() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', padding: '12px 16px', background: '#f8fafc', borderRadius: '10px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#4f46e5' }}>👤 {user.email}</span> 
-          {isAdmin && <span style={{ marginLeft: '6px', background: '#ef4444', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>👑 관리자</span>}
+          {isAdmin && (
+            <span style={{ marginLeft: '6px', background: adminRole === 'system_admin' ? '#ef4444' : '#6366f1', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>
+              👑 {adminRole === 'system_admin' ? '시스템 총괄 관리자' : '포트폴리오 관리자'}
+            </span>
+          )}
           님 접속중
         </div>
+
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           <button onClick={() => { setActiveTab('portfolio'); fetchMyPortfolios(user, isAdmin); }} style={{ padding: '6px 10px', background: activeTab === 'portfolio' ? '#4f46e5' : '#e2e8f0', color: activeTab === 'portfolio' ? '#fff' : '#334155', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
             📁 포트폴리오 목록
@@ -1418,12 +1445,17 @@ export default function App() {
               <button onClick={() => { setActiveTab('admin_dashboard'); fetchAdminData(); }} style={{ padding: '6px 10px', background: activeTab === 'admin_dashboard' ? '#0f172a' : '#e2e8f0', color: activeTab === 'admin_dashboard' ? '#fff' : '#334155', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
                 📊 대시보드
               </button>
+
               <button onClick={() => { setActiveTab('admin_management'); fetchAdminData(); }} style={{ padding: '6px 10px', background: activeTab === 'admin_management' ? '#0f172a' : '#e2e8f0', color: activeTab === 'admin_management' ? '#fff' : '#334155', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
                 ⚙️ 관리 페이지
               </button>
-              <button onClick={() => { setActiveTab('admin_logs'); fetchAdminData(); }} style={{ padding: '6px 10px', background: activeTab === 'admin_logs' ? '#0f172a' : '#e2e8f0', color: activeTab === 'admin_logs' ? '#fff' : '#334155', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
-                📋 관리자 현황 관리
-              </button>
+
+              {adminRole === 'system_admin' && (
+                <button onClick={() => { setActiveTab('admin_logs'); fetchAdminData(); }} style={{ padding: '6px 10px', background: activeTab === 'admin_logs' ? '#0f172a' : '#e2e8f0', color: activeTab === 'admin_logs' ? '#fff' : '#334155', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
+                  📋 관리자 현황 관리
+                </button>
+              )}
+
               <button onClick={() => { setActiveTab('competitor_monitoring'); }} style={{ padding: '6px 10px', background: activeTab === 'competitor_monitoring' ? '#0f172a' : '#e2e8f0', color: activeTab === 'competitor_monitoring' ? '#fff' : '#334155', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
                 🔍 경쟁사 모니터링
               </button>
@@ -1438,7 +1470,6 @@ export default function App() {
 
       {activeTab === 'admin_dashboard' && isAdmin ? (
         <div style={{ padding: '10px 0' }}>
-          
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px', background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: '#1e293b', margin: 0 }}>📊 관리자 대시보드 상세 통계</h2>
             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1499,12 +1530,14 @@ export default function App() {
                               <span style={{ background: '#dcfce7', color: '#166534', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
                                 ({activeDurationStr})
                               </span>
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); handleForceLogoutUser(log.id, log.user_email); }}
-                                style={{ padding: '2px 6px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', fontWeight: 'bold' }}
-                              >
-                                강제종료
-                              </button>
+                              {adminRole === 'system_admin' && (
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); handleForceLogoutUser(log.id, log.user_email); }}
+                                  style={{ padding: '2px 6px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', fontWeight: 'bold' }}
+                                >
+                                  강제종료
+                                </button>
+                              )}
                             </td>
                           </tr>
                         );
@@ -1597,36 +1630,38 @@ export default function App() {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
             <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '12px', color: '#334155' }}>🎵 2. 콘텐츠 및 피드백 지표</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', background: '#fff', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                  <span>기간 내 포트폴리오 수</span><strong style={{ color: '#4f46e5' }}>{filteredPortfolios.length} 개</strong>
+              <h3 style={{ fontSize: '14px', fontWeight: 'bold', color: '#334155', marginBottom: '12px' }}>🎵 2. 콘텐츠 및 피드백 지표</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', background: '#fff', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                  <span>기간 내 포트폴리오 수</span>
+                  <strong style={{ color: '#4f46e5' }}>{filteredPortfolios.length} 개</strong>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', background: '#fff', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                  <span>기간 내 피드백 수</span><strong style={{ color: '#10b981' }}>{filteredFeedbacks.length} 건</strong>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', background: '#fff', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                  <span>기간 내 피드백 수</span>
+                  <strong style={{ color: '#10b981' }}>{filteredFeedbacks.length} 건</strong>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', background: '#fff', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                  <span>기간 내 피드백 회원수</span><strong style={{ color: '#f59e0b' }}>{new Set(filteredFeedbacks.map(f => f.author)).size} 명</strong>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', background: '#fff', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                  <span>기간 내 피드백 회원수</span>
+                  <strong style={{ color: '#f59e0b' }}>{new Set(filteredFeedbacks.map(f => f.author)).size} 명</strong>
                 </div>
               </div>
             </div>
 
             <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '12px', color: '#334155' }}>🌍 3. 로그인 지역 및 회원 분포</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 'bold', color: '#334155', marginBottom: '12px' }}>🌍 3. 로그인 지역 및 회원 분포</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', maxHeight: '160px', overflowY: 'auto' }}>
                 {Object.entries(
-                  filteredLogs.reduce((acc, log) => {
+                  loginLogs.reduce((acc, log) => {
                     const loc = log.location || '대한민국 (Seoul)';
                     acc[loc] = (acc[loc] || 0) + 1;
                     return acc;
                   }, {})
-                ).map(([location, count], idx) => (
-                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', background: '#fff', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                    <span>📍 {location}</span>
-                    <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>{count} 명</span>
+                ).map(([loc, count], idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', background: '#fff', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                    <span>📍 {loc}</span>
+                    <strong style={{ color: '#4f46e5' }}>{count} 명</strong>
                   </div>
                 ))}
-                {filteredLogs.length === 0 && <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>데이터 없음</div>}
               </div>
             </div>
           </div>
@@ -1675,15 +1710,16 @@ export default function App() {
                     <th style={{ padding: '8px' }}>최종 피드백 수정일자</th>
                     <th style={{ padding: '8px' }}>사용 여부</th>
                     <th style={{ padding: '8px' }}>삭제 여부</th>
-                    <th style={{ padding: '8px' }}>소유자 ID</th>
                   </tr>
                 </thead>
                 <tbody>
                   {displayedPortfolios.length === 0 ? (
-                    <tr><td colSpan="8" style={{ textAlign: 'center', padding: '16px', color: '#64748b' }}>조건에 맞는 포트폴리오가 없습니다.</td></tr>
+                    <tr><td colSpan="7" style={{ textAlign: 'center', padding: '16px', color: '#64748b' }}>조건에 맞는 포트폴리오가 없습니다.</td></tr>
                   ) : (
                     displayedPortfolios.map((p) => {
                       const isDeleted = p.del_yn === 'Y';
+                      const canEditPortfolio = ['all', 'read_write'].includes(adminPerms.portfolio);
+
                       return (
                         <tr key={p.id} style={{ borderBottom: '1px solid #cbd5e1', background: isDeleted ? '#ffeeec' : 'transparent' }}>
                           <td style={{ padding: '8px', fontWeight: 'bold', color: isDeleted ? '#94a3b8' : '#1e293b' }}>
@@ -1694,7 +1730,19 @@ export default function App() {
                           <td style={{ padding: '8px' }}>{p.last_track_date}</td>
                           <td style={{ padding: '8px' }}>{p.last_feedback_date}</td>
                           <td style={{ padding: '8px' }}>
-                            <button onClick={() => handleToggleViewYn('portfolios', p.id, p.view_yn || 'Y')} style={{ padding: '4px 8px', background: (p.view_yn || 'Y') !== 'N' ? '#10b981' : '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+                            <button 
+                              onClick={() => handleToggleViewYn('portfolios', p.id, p.view_yn || 'Y')} 
+                              disabled={!canEditPortfolio}
+                              style={{ 
+                                padding: '4px 8px', 
+                                background: !canEditPortfolio ? '#94a3b8' : ((p.view_yn || 'Y') !== 'N' ? '#10b981' : '#ef4444'), 
+                                color: '#fff', 
+                                border: 'none', 
+                                borderRadius: '6px', 
+                                cursor: canEditPortfolio ? 'pointer' : 'not-allowed', 
+                                fontWeight: 'bold' 
+                              }}
+                            >
                               {(p.view_yn || 'Y') !== 'N' ? 'Y (사용 중)' : 'N (중지됨)'}
                             </button>
                           </td>
@@ -1703,7 +1751,6 @@ export default function App() {
                               {isDeleted ? 'Y (삭제됨)' : 'N (정상)'}
                             </span>
                           </td>
-                          <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '10px' }}>{p.owner_id}</td>
                         </tr>
                       );
                     })
@@ -1718,12 +1765,14 @@ export default function App() {
               <h3 style={{ fontSize: '15px', fontWeight: 'bold', color: '#334155', margin: 0 }}>🎵 음원 사용(조회) 여부 및 상세 관리</h3>
               
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <input type="text" placeholder="🔍 명칭 검색..." value={trackSearchName} onChange={(e) => setTrackSearchName(e.target.value)} style={{ padding: '6px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', width: '130px' }} />
+                <input type="text" placeholder="🔍 음원명 검색..." value={trackSearchName} onChange={(e) => setTrackSearchName(e.target.value)} style={{ padding: '6px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', width: '130px' }} />
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <input type="date" value={trackFromDate} onChange={(e) => setTrackFromDate(e.target.value)} style={{ padding: '5px', fontSize: '11px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
                   <span style={{ fontSize: '11px' }}>~</span>
                   <input type="date" value={trackToDate} onChange={(e) => setTrackToDate(e.target.value)} style={{ padding: '5px', fontSize: '11px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
                 </div>
+
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '12px', fontWeight: 'bold', color: '#334155', background: '#fff', padding: '4px 10px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                   <span>조회:</span>
                   {[10, 50, 100].map(cnt => (
@@ -1732,6 +1781,7 @@ export default function App() {
                     </label>
                   ))}
                 </div>
+
                 <button onClick={() => setTrackQueryExecuted(true)} style={{ padding: '6px 14px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
                   조회
                 </button>
@@ -1753,23 +1803,37 @@ export default function App() {
                   {displayedTracks.length === 0 ? (
                     <tr><td colSpan="5" style={{ textAlign: 'center', padding: '16px', color: '#64748b' }}>조건에 맞는 음원이 없습니다.</td></tr>
                   ) : (
-                    displayedTracks.map((track) => {
-                      const isTrackDeleted = track.del_yn === 'Y';
+                    displayedTracks.map((t) => {
+                      const isDeleted = t.del_yn === 'Y';
+                      const canEditTrack = ['all', 'read_write'].includes(adminPerms.track);
+
                       return (
-                        <tr key={track.id} style={{ borderBottom: '1px solid #cbd5e1', background: isTrackDeleted ? '#ffeeec' : 'transparent' }}>
-                          <td style={{ padding: '8px', fontWeight: 'bold' }}>{track.portfolios?.portfolio_name || '알 수 없음'}</td>
-                          <td style={{ padding: '8px', fontWeight: 'bold', color: isTrackDeleted ? '#94a3b8' : '#4f46e5' }}>
-                            {track.track_name} {isTrackDeleted && <span style={{ color: '#ef4444', fontWeight: 'bold' }}>(삭제됨)</span>}
+                        <tr key={t.id} style={{ borderBottom: '1px solid #cbd5e1', background: isDeleted ? '#ffeeec' : 'transparent' }}>
+                          <td style={{ padding: '8px', fontWeight: 'bold', color: '#1e293b' }}>{t.portfolios?.portfolio_name || '포트폴리오'}</td>
+                          <td style={{ padding: '8px', color: isDeleted ? '#94a3b8' : '#4f46e5', fontWeight: 'bold' }}>
+                            {t.track_name} {isDeleted && <span style={{ color: '#ef4444', fontWeight: 'bold' }}>(삭제됨)</span>}
                           </td>
-                          <td style={{ padding: '8px' }}>{track.created_at ? new Date(track.created_at).toLocaleString() : '-'}</td>
+                          <td style={{ padding: '8px' }}>{new Date(t.created_at || Date.now()).toLocaleString()}</td>
                           <td style={{ padding: '8px' }}>
-                            <button onClick={() => handleToggleViewYn('tracks', track.id, track.view_yn || 'Y')} style={{ padding: '4px 8px', background: (track.view_yn || 'Y') !== 'N' ? '#10b981' : '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-                              {(track.view_yn || 'Y') !== 'N' ? 'Y (사용 중)' : 'N (중지됨)'}
+                            <button 
+                              onClick={() => handleToggleViewYn('tracks', t.id, t.view_yn || 'Y')} 
+                              disabled={!canEditTrack}
+                              style={{ 
+                                padding: '4px 8px', 
+                                background: !canEditTrack ? '#94a3b8' : ((t.view_yn || 'Y') !== 'N' ? '#10b981' : '#ef4444'), 
+                                color: '#fff', 
+                                border: 'none', 
+                                borderRadius: '6px', 
+                                cursor: canEditTrack ? 'pointer' : 'not-allowed', 
+                                fontWeight: 'bold' 
+                              }}
+                            >
+                              {(t.view_yn || 'Y') !== 'N' ? 'Y (사용 중)' : 'N (중지됨)'}
                             </button>
                           </td>
                           <td style={{ padding: '8px' }}>
-                            <span style={{ padding: '3px 8px', background: isTrackDeleted ? '#ef4444' : '#e2e8f0', color: isTrackDeleted ? '#fff' : '#475569', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px' }}>
-                              {isTrackDeleted ? 'Y (삭제됨)' : 'N (정상)'}
+                            <span style={{ padding: '3px 8px', background: isDeleted ? '#ef4444' : '#e2e8f0', color: isDeleted ? '#fff' : '#475569', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px' }}>
+                              {isDeleted ? 'Y (삭제됨)' : 'N (정상)'}
                             </span>
                           </td>
                         </tr>
@@ -1781,17 +1845,19 @@ export default function App() {
             </div>
           </div>
 
-          <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          <div style={{ marginBottom: '28px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
               <h3 style={{ fontSize: '15px', fontWeight: 'bold', color: '#334155', margin: 0 }}>💬 피드백 사용(조회) 여부 및 상세 관리</h3>
               
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <input type="text" placeholder="🔍 명칭 검색..." value={feedbackSearchName} onChange={(e) => setFeedbackSearchName(e.target.value)} style={{ padding: '6px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', width: '130px' }} />
+                <input type="text" placeholder="🔍 내용 검색..." value={feedbackSearchName} onChange={(e) => setFeedbackSearchName(e.target.value)} style={{ padding: '6px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', width: '130px' }} />
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <input type="date" value={feedbackFromDate} onChange={(e) => setFeedbackFromDate(e.target.value)} style={{ padding: '5px', fontSize: '11px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
                   <span style={{ fontSize: '11px' }}>~</span>
                   <input type="date" value={feedbackToDate} onChange={(e) => setFeedbackToDate(e.target.value)} style={{ padding: '5px', fontSize: '11px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
                 </div>
+
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '12px', fontWeight: 'bold', color: '#334155', background: '#fff', padding: '4px 10px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                   <span>조회:</span>
                   {[10, 50, 100].map(cnt => (
@@ -1800,6 +1866,7 @@ export default function App() {
                     </label>
                   ))}
                 </div>
+
                 <button onClick={() => setFeedbackQueryExecuted(true)} style={{ padding: '6px 14px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
                   조회
                 </button>
@@ -1810,7 +1877,7 @@ export default function App() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
                 <thead>
                   <tr style={{ background: '#e2e8f0', textAlign: 'left' }}>
-                    <th style={{ padding: '8px' }}>포트폴리오</th>
+                    <th style={{ padding: '8px' }}>포트폴리오 명</th>
                     <th style={{ padding: '8px' }}>음원명</th>
                     <th style={{ padding: '8px' }}>작성자</th>
                     <th style={{ padding: '8px' }}>내용</th>
@@ -1824,24 +1891,38 @@ export default function App() {
                     <tr><td colSpan="7" style={{ textAlign: 'center', padding: '16px', color: '#64748b' }}>조건에 맞는 피드백이 없습니다.</td></tr>
                   ) : (
                     displayedFeedbacks.map((f) => {
-                      const isFeedbackDeleted = f.del_yn === 'Y';
+                      const isDeleted = f.del_yn === 'Y';
+                      const canEditFeedback = ['all', 'read_write'].includes(adminPerms.feedback);
+
                       return (
-                        <tr key={f.id} style={{ borderBottom: '1px solid #cbd5e1', background: isFeedbackDeleted ? '#ffeeec' : 'transparent' }}>
-                          <td style={{ padding: '8px' }}>{f.portfolios?.portfolio_name || '알 수 없음'}</td>
-                          <td style={{ padding: '8px', fontWeight: 'bold', color: '#4f46e5' }}>{f.tracks?.track_name || '음원 정보 없음'}</td>
-                          <td style={{ padding: '8px' }}>{f.author}</td>
-                          <td style={{ padding: '8px', color: isFeedbackDeleted ? '#94a3b8' : '#334155' }}>
-                            {f.content} {isFeedbackDeleted && <span style={{ color: '#ef4444', fontWeight: 'bold' }}>(삭제됨)</span>}
+                        <tr key={f.id} style={{ borderBottom: '1px solid #cbd5e1', background: isDeleted ? '#ffeeec' : 'transparent' }}>
+                          <td style={{ padding: '8px', fontWeight: 'bold', color: '#1e293b' }}>{f.portfolios?.portfolio_name || '포트폴리오'}</td>
+                          <td style={{ padding: '8px' }}>{f.tracks?.track_name || '음원'}</td>
+                          <td style={{ padding: '8px', color: '#4f46e5', fontWeight: 'bold' }}>{f.author}</td>
+                          <td style={{ padding: '8px', color: isDeleted ? '#94a3b8' : '#334155' }}>
+                            {f.content} {isDeleted && <span style={{ color: '#ef4444', fontWeight: 'bold' }}>(삭제됨)</span>}
                           </td>
-                          <td style={{ padding: '8px' }}>{f.created_at ? new Date(f.created_at).toLocaleString() : '-'}</td>
+                          <td style={{ padding: '8px' }}>{new Date(f.created_at || Date.now()).toLocaleString()}</td>
                           <td style={{ padding: '8px' }}>
-                            <button onClick={() => handleToggleViewYn('feedbacks', f.id, f.view_yn || 'Y')} style={{ padding: '4px 8px', background: (f.view_yn || 'Y') !== 'N' ? '#10b981' : '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+                            <button 
+                              onClick={() => handleToggleViewYn('feedbacks', f.id, f.view_yn || 'Y')} 
+                              disabled={!canEditFeedback}
+                              style={{ 
+                                padding: '4px 8px', 
+                                background: !canEditFeedback ? '#94a3b8' : ((f.view_yn || 'Y') !== 'N' ? '#10b981' : '#ef4444'), 
+                                color: '#fff', 
+                                border: 'none', 
+                                borderRadius: '6px', 
+                                cursor: canEditFeedback ? 'pointer' : 'not-allowed', 
+                                fontWeight: 'bold' 
+                              }}
+                            >
                               {(f.view_yn || 'Y') !== 'N' ? 'Y (사용 중)' : 'N (중지됨)'}
                             </button>
                           </td>
                           <td style={{ padding: '8px' }}>
-                            <span style={{ padding: '3px 8px', background: isFeedbackDeleted ? '#ef4444' : '#e2e8f0', color: isFeedbackDeleted ? '#fff' : '#475569', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px' }}>
-                              {isFeedbackDeleted ? 'Y (삭제됨)' : 'N (정상)'}
+                            <span style={{ padding: '3px 8px', background: isDeleted ? '#ef4444' : '#e2e8f0', color: isDeleted ? '#fff' : '#475569', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px' }}>
+                              {isDeleted ? 'Y (삭제됨)' : 'N (정상)'}
                             </span>
                           </td>
                         </tr>
@@ -1853,11 +1934,11 @@ export default function App() {
             </div>
           </div>
         </div>
-      ) : activeTab === 'admin_logs' && isAdmin ? (
+      ) : activeTab === 'admin_logs' && adminRole === 'system_admin' ? (
         <div style={{ padding: '10px 0' }}>
           
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1e293b', margin: 0 }}>📋 사용자 로그인 이력 및 현재 접속자 관리</h2>
+            <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1e293b', margin: 0 }}>📋 사용자 로그인 이력 및 현재 접속자 관리 (system_admin 전용)</h2>
           </div>
 
           <div style={{ marginBottom: '28px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
@@ -1868,12 +1949,6 @@ export default function App() {
                 <button onClick={fetchAdminData} style={{ padding: '5px 10px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
                   🔄 리프레시
                 </button>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '12px', color: '#475569' }}>
-                  <span>자동 리프레시:</span>
-                  <label style={{ cursor: 'pointer' }}><input type="checkbox" checked={autoRefreshInterval === '10s'} onChange={(e) => setAutoRefreshInterval(e.target.checked ? '10s' : 'none')} /> 10초</label>
-                  <label style={{ cursor: 'pointer' }}><input type="checkbox" checked={autoRefreshInterval === '1m'} onChange={(e) => setAutoRefreshInterval(e.target.checked ? '1m' : 'none')} /> 1분</label>
-                  <label style={{ cursor: 'pointer' }}><input type="checkbox" checked={autoRefreshInterval === '5m'} onChange={(e) => setAutoRefreshInterval(e.target.checked ? '5m' : 'none')} /> 5분</label>
-                </div>
               </div>
             </div>
 
@@ -1913,7 +1988,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Supabase DB 연동 및 권한 확장성이 반영된 "관리자 현황 및 권한 등급 관리" 섹션 */}
+          {/* 요청번호 v1.3-1 반영: "관리자 현황 및 권한 등급 관리" 영역을 위로 배치 */}
           <div style={{ marginBottom: '28px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
               <h3 style={{ fontSize: '15px', fontWeight: 'bold', color: '#334155', margin: 0 }}>👑 관리자 현황 및 권한 등급 관리 (DB 연동 & 기능별 세부 권한 확장)</h3>
@@ -2033,19 +2108,22 @@ export default function App() {
             </div>
           </div>
 
-          <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          {/* 요청번호 v1.3-1 반영: "사용자 로그인 이력 조회 및 검색" 영역을 아래로 배치 */}
+          <div style={{ marginBottom: '28px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
               <h3 style={{ fontSize: '15px', fontWeight: 'bold', color: '#334155', margin: 0 }}>🔍 사용자 로그인 이력 조회 및 검색</h3>
               
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <input type="text" placeholder="🔍 명칭(이메일/기기) 검색..." value={loginSearchKeyword} onChange={(e) => setLoginSearchKeyword(e.target.value)} style={{ padding: '6px 10px', fontSize: '11px', borderRadius: '6px', border: '1px solid #cbd5e1', width: '150px' }} />
-                <input type="text" placeholder="🌍 지역 검색..." value={loginRegionFilter} onChange={(e) => setLoginRegionFilter(e.target.value)} style={{ padding: '6px 10px', fontSize: '11px', borderRadius: '6px', border: '1px solid #cbd5e1', width: '100px' }} />
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <input type="text" placeholder="🔍 이메일/기기 검색..." value={loginSearchKeyword} onChange={(e) => setLoginSearchKeyword(e.target.value)} style={{ padding: '6px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', width: '130px' }} />
+                <input type="text" placeholder="📍 지역 필터 (예: Seoul)..." value={loginRegionFilter} onChange={(e) => setLoginRegionFilter(e.target.value)} style={{ padding: '6px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', width: '130px' }} />
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <input type="date" value={loginFromDate} onChange={(e) => setLoginFromDate(e.target.value)} style={{ padding: '5px', fontSize: '11px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
                   <span style={{ fontSize: '11px' }}>~</span>
                   <input type="date" value={loginToDate} onChange={(e) => setLoginToDate(e.target.value)} style={{ padding: '5px', fontSize: '11px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
                 </div>
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '11px', fontWeight: 'bold', color: '#334155', background: '#fff', padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '12px', fontWeight: 'bold', color: '#334155', background: '#fff', padding: '4px 10px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                   <span>조회:</span>
                   {[10, 50, 100].map(cnt => (
                     <label key={cnt} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px', fontWeight: loginLimitCount === cnt ? 'bold' : 'normal', color: loginLimitCount === cnt ? '#4f46e5' : '#475569' }}>
@@ -2053,7 +2131,8 @@ export default function App() {
                     </label>
                   ))}
                 </div>
-                <button onClick={() => setLoginQueryExecuted(true)} style={{ padding: '6px 14px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
+
+                <button onClick={() => setLoginQueryExecuted(true)} style={{ padding: '6px 14px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
                   조회
                 </button>
               </div>
@@ -2065,26 +2144,33 @@ export default function App() {
                   <tr style={{ background: '#e2e8f0', textAlign: 'left' }}>
                     <th style={{ padding: '8px' }}>사용자 이메일</th>
                     <th style={{ padding: '8px' }}>접속 IP</th>
-                    <th style={{ padding: '8px' }}>지역/국가</th>
+                    <th style={{ padding: '8px' }}>지역 / 국가</th>
                     <th style={{ padding: '8px' }}>로그인 시간</th>
-                    <th style={{ padding: '8px' }}>로그아웃 시간</th>
+                    <th style={{ padding: '8px' }}>접속 상태</th>
                     <th style={{ padding: '8px' }}>접속 매체</th>
                   </tr>
                 </thead>
                 <tbody>
                   {displayedLoginLogs.length === 0 ? (
-                    <tr><td colSpan="6" style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>검색 조건에 맞는 로그인 이력이 없습니다.</td></tr>
+                    <tr><td colSpan="6" style={{ textAlign: 'center', padding: '16px', color: '#94a3b8' }}>조건에 맞는 로그인 이력이 없습니다.</td></tr>
                   ) : (
-                    displayedLoginLogs.map((log) => (
-                      <tr key={log.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '8px', fontWeight: 'bold' }}>{log.user_email}</td>
-                        <td style={{ padding: '8px' }}>{log.ip_address || '-'}</td>
-                        <td style={{ padding: '8px' }}>{log.location || '대한민국 (Seoul)'}</td>
-                        <td style={{ padding: '8px' }}>{log.login_time ? new Date(log.login_time).toLocaleString() : '-'}</td>
-                        <td style={{ padding: '8px' }}>{log.logout_time ? new Date(log.logout_time).toLocaleString() : '접속 중'}</td>
-                        <td style={{ padding: '8px', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.device}>{log.device || '-'}</td>
-                      </tr>
-                    ))
+                    displayedLoginLogs.map((log) => {
+                      const isOnline = !log.logout_time;
+                      return (
+                        <tr key={log.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '8px', fontWeight: 'bold', color: '#4f46e5' }}>{log.user_email}</td>
+                          <td style={{ padding: '8px' }}>{log.ip_address || '-'}</td>
+                          <td style={{ padding: '8px' }}>{log.location || '대한민국 (Seoul)'}</td>
+                          <td style={{ padding: '8px' }}>{new Date(log.login_time).toLocaleString()}</td>
+                          <td style={{ padding: '8px' }}>
+                            <span style={{ padding: '2px 6px', background: isOnline ? '#dcfce7' : '#f1f5f9', color: isOnline ? '#166534' : '#64748b', borderRadius: '4px', fontWeight: 'bold' }}>
+                              {isOnline ? '접속 중' : '종료됨'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '8px', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.device}>{log.device || '-'}</td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -2136,93 +2222,72 @@ export default function App() {
           </div>
 
           <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
-            <h3 style={{ fontSize: '15px', fontWeight: 'bold', color: '#334155', marginBottom: '14px' }}>🎨 각 서비스별 UI 특징 및 장단점 상세 비교 (참고 이미지 연동)</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
-              {competitorDetailList
-                .filter(item => item.name.toLowerCase().includes(competitorSearchKeyword.toLowerCase()))
-                .map((item, index) => (
-                  <div key={index} style={{ background: '#fff', border: item.name.includes('우리') ? '2px solid #6366f1' : '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '14px', fontWeight: 'bold', color: item.name.includes('우리') ? '#4f46e5' : '#1e293b' }}>
-                        {item.name}
-                      </span>
-                      {item.name.includes('우리') && <span style={{ fontSize: '10px', background: '#6366f1', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>Our App</span>}
-                    </div>
-
-                    <div style={{ background: '#f1f5f9', border: '1px dashed #cbd5e1', borderRadius: '8px', padding: '10px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '80px' }}>
-                      <span style={{ fontSize: '20px', marginBottom: '4px' }}>🖼️</span>
-                      <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold' }}>{item.imageDescription}</span>
-                    </div>
-
-                    <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '6px', fontSize: '11px', color: '#334155' }}>
-                      <strong style={{ color: '#475569', display: 'block', marginBottom: '2px' }}>🖥️ UI 디자인 특징:</strong>
-                      {item.uiFeatures}
-                    </div>
-
-                    <div style={{ fontSize: '11px' }}>
-                      <strong style={{ color: '#10b981', display: 'block', marginBottom: '4px' }}>✅ 장점 (Pros)</strong>
-                      <ul style={{ margin: 0, paddingLeft: '16px', color: '#334155' }}>
-                        {item.pros.map((pro, pIdx) => (<li key={pIdx} style={{ marginBottom: '2px' }}>{pro}</li>))}
-                      </ul>
-                    </div>
-
-                    <div style={{ fontSize: '11px' }}>
-                      <strong style={{ color: '#ef4444', display: 'block', marginBottom: '4px' }}>⚠️ 단점 및 한계 (Cons)</strong>
-                      <ul style={{ margin: 0, paddingLeft: '16px', color: '#64748b' }}>
-                        {item.cons.map((con, cIdx) => (<li key={cIdx} style={{ marginBottom: '2px' }}>{con}</li>))}
-                      </ul>
-                    </div>
+            <h3 style={{ fontSize: '15px', fontWeight: 'bold', color: '#334155', marginBottom: '16px' }}>🎨 각 서비스별 UI 특징 및 장단점 상세 비교 (참고 이미지 연동)</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+              {[
+                { name: 'SoundBetter', ui: '전문가 프로필 중심의 깔끔한 그리드 및 오디오 음원 플레이어가 탑재된 메인 마켓플레이스 UI', pros: '세계 최대 규모의 프로페셔널 엔지니어/믹싱 전문가 인프라\nSpotify 기반 신뢰할 수 있는 구인/구직 세부링 UI', cons: '실시간 웹 기반 멀티트랙 및 실시간 협업 및 스트리밍 기능 부재\nPro 등급 월 구독 비용 및 수수료 수취 정책 수수료 부담 높음', isOurs: false },
+                { name: 'Audiio', ui: '다모드 중심의 세련된 모던사이드바 UI, 라이트/다크 테마 지원 사이드메뉴가 직관적으로 배치됨', pros: '빠른 오디오 로딩 속도와 직관적인 정보/백그라운드 재생 기능\n영상 제작자 및 유튜버 친화적인컬렉션 관리 기능', cons: '사용자 간 비정상적인 피드백 및 댓글 기능 미지원\n방르어트랙 재생 시퀀스/순차 재생 기능 단순 단순 다운로드에 국한되어 협업 스트리밍 기능 부족', isOurs: false },
+                { name: 'BandLab', ui: '웹 DAW(Digital Audio Workstation) 스타일의 기능 기반버전 웹 기반 멀티트랙 에디터와 소셜 커뮤니티 하이브리드 UI', pros: '브라우저에서 직접 실행되는 믹싱 및 AI 마스터링 기능\n활성화된 글로벌 커뮤니티 및 소셜 궁극 기능', cons: '기능이 가득하게 쌓여 단순 피드백 및 도구 가이드가 다소 복잡함\n초단위 피드백 세밀 제어/소스 공유에 대한 상세 피드백 제한', isOurs: false },
+                { name: '우리 플랫폼 (현재)', ui: '크리에이터 중심의 썸네일/스튜디오 메인 레이아웃, 포트폴리오 카드 컴포넌트 및 실시간 인터페이스', pros: '멀티트랙 멀티오디오 초단위 정밀(Start/End) 타임스탬프 피드백\n전체재생 및 순차재생 모드, 노드-레벨 순서 변경 및 실시간 피드백 관리\n관리자 모니터링, 세션관리, 세분화된 데이터베이스 연동 및 권한 체계', cons: '웹 DAW까지의 복잡한 마스터링 편집 기능은 아직 제한적', isOurs: true }
+              ].map((item, idx) => (
+                <div key={idx} style={{ background: '#fff', borderRadius: '8px', border: item.isOurs ? '2px solid #4f46e5' : '1px solid #cbd5e1', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong style={{ color: item.isOurs ? '#4f46e5' : '#1e293b', fontSize: '13px' }}>{item.name}</strong>
+                    {item.isOurs && <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>Our App</span>}
                   </div>
-                ))}
+                  <div style={{ height: '60px', background: '#f1f5f9', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '11px', textAlign: 'center', padding: '4px' }}>
+                    🖼️ [참고 이미지 영역]
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#334155' }}><strong>UI 특징:</strong> {item.ui}</div>
+                  <div style={{ fontSize: '11px', color: '#166534', whiteSpace: 'pre-line' }}><strong>✅ 장점 (Pros):</strong><br/>{item.pros}</div>
+                  <div style={{ fontSize: '11px', color: '#991b1b', whiteSpace: 'pre-line' }}><strong>⚠️ 단점 (Cons):</strong><br/>{item.cons}</div>
+                </div>
+              ))}
             </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
             <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: 'bold', color: '#334155', marginBottom: '12px' }}>🚨 실시간 경쟁사 업데이트 노트</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '240px', overflowY: 'auto' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 'bold', color: '#334155', marginBottom: '12px' }}>📌 실시간 경쟁사 업데이트 노트</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
                 {competitorNotes.map((note) => (
-                  <div key={note.id} style={{ background: '#fff', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#ef4444' }}>🏢 {note.competitor}</span>
+                  <div key={note.id} style={{ background: '#fff', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 'bold', color: '#4f46e5' }}>{note.competitor}</span>
                       <span style={{ fontSize: '10px', color: '#94a3b8' }}>{note.date}</span>
                     </div>
-                    <p style={{ fontSize: '11px', color: '#334155', margin: 0 }}>{note.note}</p>
+                    <p style={{ margin: 0, color: '#334155' }}>{note.note}</p>
                   </div>
                 ))}
               </div>
             </div>
 
             <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: 'bold', color: '#334155', marginBottom: '12px' }}>✍️ 모니터링 메모 및 인사이트 등록</h3>
+              <h3 style={{ fontSize: '14px', fontWeight: 'bold', color: '#334155', marginBottom: '12px' }}>📝 모니터링 메모 및 인사이트 등록</h3>
               <form onSubmit={(e) => {
                 e.preventDefault();
                 if (!newCompetitorNote.trim()) return;
-                const newItem = {
+                const newNote = {
                   id: Date.now(),
                   competitor: selectedCompetitorTarget,
-                  note: newCompetitorNote,
+                  note: newCompetitorNote.trim(),
                   date: new Date().toISOString().split('T')[0]
                 };
-                setCompetitorNotes([newItem, ...competitorNotes]);
+                setCompetitorNotes([newNote, ...competitorNotes]);
                 setNewCompetitorNote('');
-                alert('경쟁사 모니터링 메모가 등록되었습니다!');
-              }} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div>
-                  <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>대상 경쟁사</label>
-                  <select value={selectedCompetitorTarget} onChange={(e) => setSelectedCompetitorTarget(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: '#fff' }}>
-                    <option value="SoundBetter">SoundBetter</option>
-                    <option value="Audiio">Audiio</option>
-                    <option value="BandLab">BandLab</option>
-                    <option value="기타 신규 서비스">기타 신규 서비스</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>특이사항 및 벤치마킹 내용</label>
-                  <textarea value={newCompetitorNote} onChange={(e) => setNewCompetitorNote(e.target.value)} placeholder="경쟁사 신기능 출시, 가격 정책 변경 등 내용을 기록하세요..." style={{ width: '100%', height: '70px', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', resize: 'none', boxSizing: 'border-box' }} required />
-                </div>
+                alert('경쟁사 모니터링 메모가 등록되었습니다.');
+              }} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b' }}>대상 경쟁사</label>
+                <select value={selectedCompetitorTarget} onChange={(e) => setSelectedCompetitorTarget(e.target.value)} style={{ padding: '6px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff' }}>
+                  <option value="SoundBetter">SoundBetter</option>
+                  <option value="Audiio">Audiio</option>
+                  <option value="BandLab">BandLab</option>
+                  <option value="기타">기타 플랫폼</option>
+                </select>
+                <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b' }}>인사이트 및 메모 내용</label>
+                <textarea placeholder="특이사항 및 벤치마킹할 내용을 기록하세요..." value={newCompetitorNote} onChange={(e) => setNewCompetitorNote(e.target.value)} style={{ width: '100%', height: '70px', padding: '8px', fontSize: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', resize: 'none', boxSizing: 'border-box' }} required />
                 <button type="submit" style={{ padding: '8px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
-                  메모 등록 📝
+                  메모 등록 🚀
                 </button>
               </form>
             </div>
@@ -2290,16 +2355,20 @@ export default function App() {
                 <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1e293b', margin: 0 }}>
                   🎵 현재 포트폴리오: <span style={{ color: '#4f46e5' }}>{portfolioName} ({portfolioOwnerEmail})</span>
                 </h2>
-                {isOwner && (
+                
+                {(isOwner || adminPerms.portfolio === 'all') && (
                   <button onClick={handleDeleteCurrentPortfolio} style={{ padding: '5px 10px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
                     삭제
                   </button>
                 )}
               </div>
-              <label style={{ padding: '6px 12px', background: '#3b82f6', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px', display: 'inline-block' }}>
-                📁 음원 추가하기 (Supabase Storage)
-                <input type="file" multiple accept="audio/*" onChange={handleMultipleUpload} style={{ display: 'none' }} />
-              </label>
+
+              {(isOwner || ['all', 'read_write'].includes(adminPerms.track)) && (
+                <label style={{ padding: '6px 12px', background: '#3b82f6', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px', display: 'inline-block' }}>
+                  📁 음원 추가하기 (Supabase Storage)
+                  <input type="file" multiple accept="audio/*" onChange={handleMultipleUpload} style={{ display: 'none' }} />
+                </label>
+              )}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '12px', flexWrap: 'wrap', gap: '10px' }}>
@@ -2360,6 +2429,7 @@ export default function App() {
               sortedTracks.map((track, index) => {
                 const isCurrentSeq = activeSequentialTrackId === track.id;
                 const isTrackPlaying = !!trackPlayingStates[track.id];
+                const canEditTrack = ['all', 'read_write'].includes(adminPerms.track) || !isAdmin;
 
                 return (
                   <div key={track.id} style={{ padding: '14px', background: isCurrentSeq ? '#ecfdf5' : '#fafafa', borderRadius: '12px', border: `1px solid ${isCurrentSeq ? '#10b981' : '#e5e7eb'}` }}>
@@ -2375,22 +2445,26 @@ export default function App() {
                           {isTrackPlaying ? '정지 (II)' : '재생 (>)'}
                         </button>
 
-                        <div style={{ display: 'flex', gap: '2px' }}>
-                          <button onClick={() => handleMoveTrackOrder(index, 'up')} disabled={index === 0} style={{ padding: '3px 7px', background: index === 0 ? '#cbd5e1' : '#4f46e5', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', cursor: index === 0 ? 'not-allowed' : 'pointer', fontWeight: 'bold' }} title="위로 이동">
-                            ▲ 위로
-                          </button>
-                          <button onClick={() => handleMoveTrackOrder(index, 'down')} disabled={index === sortedTracks.length - 1} style={{ padding: '3px 7px', background: index === sortedTracks.length - 1 ? '#cbd5e1' : '#4f46e5', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', cursor: index === sortedTracks.length - 1 ? 'not-allowed' : 'pointer', fontWeight: 'bold' }} title="아래로 이동">
-                            ▼ 아래로
-                          </button>
-                        </div>
+                        {canEditTrack && (
+                          <div style={{ display: 'flex', gap: '2px' }}>
+                            <button onClick={() => handleMoveTrackOrder(index, 'up')} disabled={index === 0} style={{ padding: '3px 7px', background: index === 0 ? '#cbd5e1' : '#4f46e5', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', cursor: index === 0 ? 'not-allowed' : 'pointer', fontWeight: 'bold' }} title="위로 이동">
+                              ▲ 위로
+                            </button>
+                            <button onClick={() => handleMoveTrackOrder(index, 'down')} disabled={index === sortedTracks.length - 1} style={{ padding: '3px 7px', background: index === sortedTracks.length - 1 ? '#cbd5e1' : '#4f46e5', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', cursor: index === sortedTracks.length - 1 ? 'not-allowed' : 'pointer', fontWeight: 'bold' }} title="아래로 이동">
+                              ▼ 아래로
+                            </button>
+                          </div>
+                        )}
 
                         <button onClick={() => handleToggleMute(track.id)} style={{ padding: '4px 10px', background: track.muted ? '#ef4444' : '#e5e7eb', color: track.muted ? '#fff' : '#374151', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}>
                           {track.muted ? '🔇 음소거 해제' : '🔊 음소거'}
                         </button>
 
-                        <button onClick={() => handleDeleteTrack(track.id, track.track_name)} style={{ padding: '4px 10px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}>
-                          삭제
-                        </button>
+                        {canEditTrack && (
+                          <button onClick={() => handleDeleteTrack(track.id, track.track_name)} style={{ padding: '4px 10px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}>
+                            삭제
+                          </button>
+                        )}
                       </div>
                     </div>
                     <div ref={(el) => (containerRefs.current[track.id] = el)} style={{ width: '100%', background: '#fff', borderRadius: '6px', overflow: 'hidden' }} />
@@ -2404,7 +2478,6 @@ export default function App() {
             <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
               <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '12px', color: '#1e293b' }}>💬 피드백 남기기</h3>
               <form onSubmit={handleAddComment} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div>
                     <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>작성자</label>
@@ -2457,6 +2530,9 @@ export default function App() {
                       try { reactions = JSON.parse(reactions); } catch(e) { reactions = {}; }
                     }
 
+                    const isAuthor = c.user_id === user.id;
+                    const canManageFeedback = ['all', 'read_write'].includes(adminPerms.feedback);
+
                     return (
                       <div key={c.id} style={{ padding: '12px', background: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         
@@ -2486,8 +2562,8 @@ export default function App() {
                             );
                           })}
 
-                          {c.user_id === user.id && (
-                            <button onClick={() => handleDeleteComment(c.id)} style={{ fontSize: '11px', background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontWeight: 'bold' }}>
+                          {(isAuthor || canManageFeedback) && (
+                            <button onClick={() => handleDeleteComment(c)} style={{ fontSize: '11px', background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontWeight: 'bold' }}>
                               삭제
                             </button>
                           )}
@@ -2508,22 +2584,26 @@ export default function App() {
 
                         {replies.length > 0 && ( 
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px', paddingLeft: '16px', borderLeft: '2px solid #e2e8f0' }}>
-                            {replies.map((r) => (
-                              <div key={r.id} style={{ padding: '6px 8px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px', alignItems: 'center' }}>
-                                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#4f46e5' }}>↳ {r.author}</span>
-                                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                    <span style={{ fontSize: '9px', color: '#94a3b8' }}>{new Date(r.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                                    {r.user_id === user.id && (
-                                      <button onClick={() => handleDeleteComment(r.id)} style={{ fontSize: '9px', background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontWeight: 'bold', padding: 0 }}>
-                                        삭제
-                                      </button>
-                                    )}
+                            {replies.map((r) => {
+                              const isReplyAuthor = r.user_id === user.id;
+
+                              return (
+                                <div key={r.id} style={{ padding: '6px 8px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#4f46e5' }}>↳ {r.author}</span>
+                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                      <span style={{ fontSize: '9px', color: '#94a3b8' }}>{new Date(r.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                      {(isReplyAuthor || canManageFeedback) && (
+                                        <button onClick={() => handleDeleteComment(r)} style={{ fontSize: '9px', background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontWeight: 'bold', padding: 0 }}>
+                                          삭제
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
+                                  <p style={{ fontSize: '11px', color: '#334155', margin: 0 }}>{r.content}</p>
                                 </div>
-                                <p style={{ fontSize: '11px', color: '#334155', margin: 0 }}>{r.content}</p>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
 
