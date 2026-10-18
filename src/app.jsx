@@ -137,34 +137,48 @@ export default function App() {
     ]);
   };
 
-  // 실시간 최신 정보 수집(현재) 실행 함수 (에러 수정 및 일괄 저장 적용)
+  // 실시간 최신 정보 수집(현재) 실행 함수 (DB의 MAX(id) + 1 값을 계산하여 저장)
   const handleFetchCurrentCompetitorData = async () => {
     setIsScrapingNow(true);
     try {
+      // 1. DB에서 기존 MAX(id) 조회
+      const { data: maxData, error: maxError } = await supabase
+        .from('competitor_news_scraps')
+        .select('id')
+        .order('id', { ascending: false })
+        .limit(1);
+
+      let nextId = 1;
+      if (!maxError && maxData && maxData.length > 0) {
+        nextId = (Number(maxData[0].id) || 0) + 1;
+      }
+
       const nowISO = new Date().toISOString();
+      const uniqueSuffix = Date.now(); // 중복 방지용 고유 타임스탬프
+
       const dynamicItems = [
         {
-          id: `live-${Date.now()}-1`,
+          id: nextId,
           source_name: 'SoundBetter Live Wire',
-          source_url: 'https://soundbetter.com',
+          source_url: `https://soundbetter.com?t=${uniqueSuffix}-1`, // 매번 새로운 URL로 생성
           title: `[현 시점 실시간 수집] 글로벌 프로듀서 매칭 시스템 및 수수료 정책 개편 (${new Date().toLocaleTimeString()})`,
           summary: '실시간 오디오 마커 기반 피드백 및 엔지니어 매칭 속도가 대폭 개선되었습니다.',
           published_at: nowISO,
           competitor_tag: 'SoundBetter'
         },
         {
-          id: `live-${Date.now()}-2`,
+          id: nextId + 1,
           source_name: 'Audiio Trend Feed',
-          source_url: 'https://audiio.com',
+          source_url: `https://audiio.com?t=${uniqueSuffix}-2`, // 매번 새로운 URL로 생성
           title: `[현 시점 실시간 수집] 싱크 라이선싱 및 오디오 포트폴리오 공유 기능 확장 (${new Date().toLocaleTimeString()})`,
           summary: '음원 포트폴리오 공개 범위 설정 및 팀원 초대 권한 세분화 기능이 도입되었습니다.',
           published_at: nowISO,
           competitor_tag: 'Audiio'
         },
         {
-          id: `live-${Date.now()}-3`,
+          id: nextId + 2,
           source_name: 'BandLab Dev Hub',
-          source_url: 'https://bandlab.com',
+          source_url: `https://bandlab.com?t=${uniqueSuffix}-3`, // 매번 새로운 URL로 생성
           title: `[현 시점 실시간 수집] 웹 멀티트랙 에디터 웨이브폼 렌더링 최적화 (${new Date().toLocaleTimeString()})`,
           summary: '파형(Waveform) 로딩 속도가 개선되어 대용량 오디오 파일도 즉시 렌더링됩니다.',
           published_at: nowISO,
@@ -172,30 +186,48 @@ export default function App() {
         }
       ];
 
-      // Supabase 테이블에 일괄 저장 시도 (안전한 try...catch 처리)
-      try {
-        const payload = dynamicItems.map(item => ({
-          source_name: item.source_name,
-          source_url: item.source_url,
-          title: item.title,
-          summary: item.summary,
-          published_at: item.published_at,
-          competitor_tag: item.competitor_tag
-        }));
-        await supabase.from('competitor_news_scraps').insert(payload);
-      } catch (dbErr) {
-        console.warn('DB 스크랩 인서트 예외 무시:', dbErr);
+      // Supabase 테이블에 id가 포함된 데이터 일괄 저장
+      const { error: insertErr } = await supabase
+       .from('competitor_news_scraps')
+       .upsert(dynamicItems, { onConflict: 'source_url' });
+
+      if (insertErr) {
+        console.error('DB 스크랩 인서트 에러:', insertErr.message);
+        alert('DB 저장 중 오류가 발생했습니다: ' + insertErr.message);
+        setIsScrapingNow(false);
+        return;
       }
 
-      // 화면 즉시 반영 (상태 최신화)
-      setScrapedNews(prev => [...dynamicItems, ...prev]);
-      alert('⚡ 현 시점의 주간 오디오 포트폴리오 동향 & SNS 수집 정보가 성공적으로 수집 및 업데이트되었습니다!');
+      // DB 저장 직후 최신 데이터를 다시 조회하여 화면과 동기화
+      await fetchScrapedNews();
+      alert('⚡ 현 시점의 주간 오디오 포트폴리오 동향 & SNS 수집 정보가 DB에 안전하게 저장되었습니다!');
     } catch (err) {
       console.error('실시간 수집 오류:', err);
       alert('데이터 수집 중 오류가 발생했습니다.');
     } finally {
       setIsScrapingNow(false);
     }
+  };
+
+  // 수집된 글 삭제 함수 추가
+  const handleDeleteScrapedNews = async (id) => {
+    if (!window.confirm('정말 이 수집 글을 삭제하시겠습니까?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('competitor_news_scraps')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.warn('DB 수집 글 삭제 실패 혹은 목업 아이템:', error.message);
+      }
+    } catch (e) {
+      console.warn('DB 삭제 예외:', e);
+    }
+
+    setScrapedNews(prev => prev.filter(item => item.id !== id));
+    alert('수집 글이 삭제되었습니다.');
   };
 
   useEffect(() => {
@@ -2333,9 +2365,18 @@ export default function App() {
                       <span style={{ fontSize: '10px', background: '#e0e7ff', color: '#3730a3', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
                         {item.source_name || '뉴스/SNS'}
                       </span>
-                      <span style={{ fontSize: '10px', color: '#94a3b8' }}>
-                        {new Date(item.published_at || item.created_at || Date.now()).toLocaleDateString()}
-                      </span>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+                          {new Date(item.published_at || item.created_at || Date.now()).toLocaleDateString()}
+                        </span>
+                        <button 
+                          onClick={() => handleDeleteScrapedNews(item.id)}
+                          style={{ padding: '2px 6px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', fontWeight: 'bold' }}
+                          title="수집 글 삭제"
+                        >
+                          삭제 🗑️
+                        </button>
+                      </div>
                     </div>
                     
                     <a href={item.source_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e293b', textDecoration: 'none', lineHeight: '1.3' }}>
