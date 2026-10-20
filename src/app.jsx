@@ -45,7 +45,7 @@ export default function App() {
   const [editAdminRole, setEditAdminRole] = useState('portfolio_admin');
   const [editPermissions, setEditPermissions] = useState({ portfolio: 'all', track: 'all', feedback: 'all' });
 
-  // 로그인 이력 조회 페이지 전용 검색 및 페이징 상태
+  // 로그인 이력 조회 페이지 전용 검색 및 페이징 상태 
   const [loginSearchKeyword, setLoginSearchKeyword] = useState('');
   const [loginFromDate, setLoginFromDate] = useState('');
   const [loginToDate, setLoginToDate] = useState('');
