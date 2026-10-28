@@ -208,13 +208,18 @@ export default function App() {
       setSelectedTrackId(null);
     }
 
-    const { data: feedbackData } = await supabase
+    const { data: feedbackData, error: feedbackError } = await supabase
       .from('feedbacks')
       .select('*')
       .eq('portfolio_id', portfolio.id)
       .eq('del_yn', 'N');
 
-    setComments(feedbackData || []);
+    if (feedbackError) {
+      console.error('코멘트 조회 오류:', feedbackError);
+      setComments([]);
+    } else {
+      setComments(feedbackData || []);
+    }
   };
 
   const handleOpenPublicDetail = (portfolio) => {
@@ -326,12 +331,12 @@ export default function App() {
 
   const handleSaveTimestampComment = async (e) => {
     e.preventDefault();
-    if (!timestampInput.trim() || !currentPortfolioId) return;
+    if (!timestampInput.trim() || !currentPortfolioId || !user) return;
 
     const newComment = {
       portfolio_id: currentPortfolioId,
       user_id: user.id,
-      author: user.email.split('@')[0],
+      author: user.email ? user.email.split('@')[0] : '익명',
       track_id: selectedTrackId,
       start_time: Number(timestampTime.toFixed(2)),
       content: timestampInput,
@@ -340,17 +345,33 @@ export default function App() {
     };
 
     const { data, error } = await supabase.from('feedbacks').insert([newComment]).select().single();
-    if (!error && data) {
-      setComments([...comments, data]);
+    
+    if (error) {
+      console.error('타임스탬프 코멘트 저장 오류:', error.message);
+      alert('코멘트 저장 중 오류가 발생했습니다: ' + error.message);
+    } else if (data) {
+      setComments((prevComments) => [...prevComments, data]);
       setTimestampInput('');
       setIsTimestampMode(false);
     }
   };
 
   const handleToggleResolve = async (commentId) => {
-    const updated = comments.map(c => c.id === commentId ? { ...c, resolved: !c.resolved } : c);
+    const targetComment = comments.find(c => c.id === commentId);
+    if (!targetComment) return;
+
+    const newResolvedState = !targetComment.resolved;
+    const updated = comments.map(c => c.id === commentId ? { ...c, resolved: newResolvedState } : c);
     setComments(updated);
-    await supabase.from('feedbacks').update({ resolved: !comments.find(c => c.id === commentId)?.resolved }).eq('id', commentId);
+
+    const { error } = await supabase
+      .from('feedbacks')
+      .update({ resolved: newResolvedState })
+      .eq('id', commentId);
+
+    if (error) {
+      console.error('해결 상태 업데이트 오류:', error.message);
+    }
   };
 
   const handleSeekToComment = (time) => {
@@ -387,12 +408,6 @@ export default function App() {
       setSelectedTrackId(data.id);
       alert(`v${versionNum} 버전이 업로드되었습니다!`);
     }
-  };
-
-  const handleAddContributor = () => {
-    if (!newContributorName.trim()) return;
-    setContributors([...contributors, { id: Date.now(), name: newContributorName, role: newContributorRole }]);
-    setNewContributorName('');
   };
 
   const handleCompleteWorkspace = () => {
@@ -464,9 +479,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* ⚙️ 계정·요금제 설정 화면 (이미지 14.jpg - S01, S02 완벽 반영)              */}
-      {/* ========================================================================= */}
+      {/* ⚙️ 계정·요금제 설정 화면 */}
       {activeTab === 'settings' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -474,7 +487,6 @@ export default function App() {
             <button onClick={() => setActiveTab('portfolio')} style={{ background: 'none', border: 'none', fontSize: '12px', color: '#4f46e5', cursor: 'pointer', fontWeight: 'bold' }}>✕ 닫기</button>
           </div>
 
-          {/* ① 계정 설정 [S01] */}
           <div style={{ border: '1px solid #cbd5e1', borderRadius: '12px', background: '#f8fafc', overflow: 'hidden' }}>
             <div style={{ padding: '10px 14px', fontSize: '12px', fontWeight: 'bold', color: '#1e293b', borderBottom: '1px solid #e2e8f0', background: '#f1f5f9' }}>
               계정 설정 (S01)
@@ -495,50 +507,37 @@ export default function App() {
             </div>
           </div>
 
-          {/* ② 요금제 설정 및 업그레이드 [S02] */}
           <div style={{ border: '1px solid #cbd5e1', borderRadius: '12px', background: '#f8fafc', padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#1e293b' }}>
-              요금제 설정 (S02 - 무료, Pro, Crew 비교)[cite: 16]
+              요금제 설정 (S02 - 무료, Pro, Crew 비교)
             </div>
             <div style={{ fontSize: '11px', color: '#64748b' }}>
-              무료, Pro, Crew 세 가지 요금제를 나란히 비교하고 원하는 플랜으로 업그레이드하세요[cite: 16].
+              무료, Pro, Crew 세 가지 요금제를 나란히 비교하고 원하는 플랜으로 업그레이드하세요.
             </div>
 
-            {/* 요금제 카드 선택 그리드 */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-              
-              {/* 무료 플랜 */}
               <div onClick={() => setSelectedPlan('무료')} style={{ padding: '10px', background: selectedPlan === '무료' ? '#e0e7ff' : '#fff', border: `2px solid ${selectedPlan === '무료' ? '#4f46e5' : '#cbd5e1'}`, borderRadius: '8px', cursor: 'pointer', textAlign: 'center' }}>
                 <div style={{ fontWeight: 'bold', fontSize: '12px', marginBottom: '4px' }}>무료</div>
                 <div style={{ fontSize: '10px', color: '#64748b' }}>기본 기능 제공</div>
               </div>
-
-              {/* Pro 플랜 */}
               <div onClick={() => setSelectedPlan('Pro')} style={{ padding: '10px', background: selectedPlan === 'Pro' ? '#e0e7ff' : '#fff', border: `2px solid ${selectedPlan === 'Pro' ? '#4f46e5' : '#cbd5e1'}`, borderRadius: '8px', cursor: 'pointer', textAlign: 'center' }}>
                 <div style={{ fontWeight: 'bold', fontSize: '12px', marginBottom: '4px' }}>Pro</div>
                 <div style={{ fontSize: '10px', color: '#4f46e5' }}>추천 플랜</div>
               </div>
-
-              {/* Crew 플랜 */}
               <div onClick={() => setSelectedPlan('Crew')} style={{ padding: '10px', background: selectedPlan === 'Crew' ? '#e0e7ff' : '#fff', border: `2px solid ${selectedPlan === 'Crew' ? '#4f46e5' : '#cbd5e1'}`, borderRadius: '8px', cursor: 'pointer', textAlign: 'center' }}>
                 <div style={{ fontWeight: 'bold', fontSize: '12px', marginBottom: '4px' }}>Crew</div>
                 <div style={{ fontSize: '10px', color: '#64748b' }}>팀 협업용</div>
               </div>
-
             </div>
 
-            {/* 업그레이드 액션 버튼 */}
             <button onClick={() => alert(`성공적으로 [${selectedPlan}] 요금제로 업그레이드 되었습니다!`)} style={{ width: '100%', padding: '12px', background: '#1f1e1b', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', marginTop: '4px' }}>
               {selectedPlan} 요금제로 업그레이드
             </button>
           </div>
-
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 📧 비회원 메일 보내기 모달 (M06)                                          */}
-      {/* ========================================================================= */}
+      {/* 📧 비회원 메일 보내기 모달 */}
       {isEmailModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}>
           <div style={{ width: '100%', maxWidth: '400px', background: '#f7f6f2', border: '2px solid #5d5b54', borderRadius: '20px', padding: '16px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -561,9 +560,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 🔗 공유 메뉴 모달 (P11)                                                  */}
-      {/* ========================================================================= */}
+      {/* 🔗 공유 메뉴 모달 */}
       {isShareMenuOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}>
           <div style={{ width: '100%', maxWidth: '380px', background: '#f7f6f2', border: '2px solid #5d5b54', borderRadius: '20px', padding: '18px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -586,7 +583,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 🌟 포트폴리오 상세 공개 페이지 (13.jpg) */}
+      {/* 포트폴리오 상세 공개 페이지 */}
       {activeTab === 'public_detail' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <button onClick={() => setActiveTab('explore')} style={{ background: 'none', border: 'none', fontSize: '12px', color: '#64748b', cursor: 'pointer', alignSelf: 'flex-start', fontWeight: 'bold' }}>
@@ -635,14 +632,10 @@ export default function App() {
               <button onClick={handlePlayRecommendedSection} style={{ padding: '3px 6px', background: '#e0e7ff', color: '#3730a3', border: 'none', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>추천 구간 듣기</button>
             </div>
           </div>
-
-          <button onClick={() => alert('나만의 포트폴리오 만들기 가입 페이지')} style={{ width: '100%', padding: '14px', background: '#1f1e1b', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>
-            나도 만들기
-          </button>
         </div>
       )}
 
-      {/* 1. 탐색 피드 탭 */}
+      {/* 탐색 피드 탭 */}
       {activeTab === 'explore' && (
         <div>
           <h2 style={{ fontSize: '17px', fontWeight: 'bold', marginBottom: '12px' }}>🔍 피드 탐색</h2>
@@ -660,7 +653,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 2. 메시지 탭 */}
+      {/* 메시지 탭 */}
       {activeTab === 'messages' && !selectedChatRoom && (
         <div>
           <h2 style={{ fontSize: '17px', fontWeight: 'bold', marginBottom: '12px' }}>💬 대화 목록 메시지</h2>
@@ -689,7 +682,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 3. 작업방 탭 */}
+      {/* 작업방 탭 */}
       {activeTab === 'workspace' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <h2 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, color: '#1e293b' }}>
@@ -777,14 +770,14 @@ export default function App() {
         </div>
       )}
 
-      {/* 4. 내 포트폴리오 탭 */}
+      {/* 내 포트폴리오 탭 */}
       {activeTab === 'portfolio' && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
             <h2 style={{ fontSize: '17px', fontWeight: 'bold', margin: 0 }}>📁 내 포트폴리오</h2>
             <div style={{ display: 'flex', gap: '6px' }}>
               <button onClick={() => setIsShareMenuOpen(true)} style={{ padding: '6px 10px', background: '#0f6e56', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>🔗 공유</button>
-              <button onClick={handleLoadPortfolio} style={{ padding: '6px 10px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>➕ 새로 만들기</button>
+              <button onClick={() => handleLoadPortfolio(myPortfolios[0])} style={{ padding: '6px 10px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>➕ 새로 만들기</button>
             </div>
           </div>
 
@@ -802,7 +795,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 📱 하단 고정 탭바 (C04) */}
+      {/* 하단 고정 탭바 */}
       <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: '#fff', borderTop: '1px solid #e2dfd6', display: 'flex', justifyContent: 'space-around', padding: '8px 0 16px 0', zIndex: 100 }}>
         <div onClick={() => setActiveTab('explore')} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: 'pointer', flex: 1 }}>
           <div style={{ width: '18px', height: '18px', borderRadius: '5px', background: activeTab === 'explore' ? '#0f6e56' : '#d6d3c9' }} />
