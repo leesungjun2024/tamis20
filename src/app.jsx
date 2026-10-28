@@ -244,12 +244,12 @@ export default function App() {
     }
   };
 
-  // 작업방 WaveSurfer 인스턴스 (W03)
+  // 작업방 WaveSurfer 인스턴스 (W03) - 업로드된 파일의 유효한 URL 로드 보완
   useEffect(() => {
     if (activeTab !== 'workspace' || !selectedTrackId || !waveformContainerRef.current) return;
 
     const currentTrack = tracks.find(t => t.id === selectedTrackId);
-    if (!currentTrack) return;
+    if (!currentTrack || !currentTrack.file_url) return;
 
     if (wavesurferRef.current) {
       wavesurferRef.current.destroy();
@@ -279,7 +279,7 @@ export default function App() {
     ws.on('pause', () => setIsPlaying(false));
 
     return () => ws.destroy();
-  }, [selectedTrackId, activeTab, isTimestampMode]);
+  }, [selectedTrackId, activeTab, isTimestampMode, tracks]);
 
   // 공개 상세 페이지 WaveSurfer 인스턴스 (E06)
   useEffect(() => {
@@ -381,32 +381,56 @@ export default function App() {
     }
   };
 
+  // [기능 3.5] 새 버전 음원 업로드 및 재생 가능하도록 URL 보완
   const handleUploadNewVersion = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0 || !currentPortfolioId) return;
 
     const file = files[0];
     const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 6)}.${fileExt}`;
+    const cleanFileName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_'); // 특수문자 정제
+    const fileName = `${Date.now()}_${cleanFileName}`;
     const filePath = `${currentPortfolioId}/${fileName}`;
 
-    await supabase.storage.from('audio_files').upload(filePath, file);
+    // Supabase Storage 업로드 실행 ('audio_files' 버킷)
+    const { error: uploadError } = await supabase.storage.from('audio_files').upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false
+    });
+
+    if (uploadError) {
+      console.error('스토리지 업로드 오류:', uploadError.message);
+      alert('음원 파일 업로드 실패: ' + uploadError.message);
+      return;
+    }
+
+    // 퍼블릭 URL 획득
     const { data: publicUrlData } = supabase.storage.from('audio_files').getPublicUrl(filePath);
+    const publicUrl = publicUrlData?.publicUrl;
+
+    if (!publicUrl) {
+      alert('업로드된 음원의 퍼블릭 URL을 가져오지 못했습니다.');
+      return;
+    }
 
     const versionNum = tracks.length + 1;
     const newTrack = {
       portfolio_id: currentPortfolioId,
       track_name: `v${versionNum} - ${file.name}`,
-      file_url: publicUrlData.publicUrl,
+      file_url: publicUrl,
       order: versionNum,
       del_yn: 'N'
     };
 
-    const { data, error } = await supabase.from('tracks').insert([newTrack]).select().single();
-    if (!error && data) {
-      setTracks([...tracks, data]);
-      setSelectedTrackId(data.id);
-      alert(`v${versionNum} 버전이 업로드되었습니다!`);
+    const { data, error: dbError } = await supabase.from('tracks').insert([newTrack]).select().single();
+    
+    if (dbError) {
+      console.error('트랙 DB 저장 오류:', dbError.message);
+      alert('트랙 정보 저장 실패: ' + dbError.message);
+    } else if (data) {
+      setTracks((prevTracks) => [...prevTracks, data]);
+      setSelectedTrackId(data.id); // 업로드 직후 해당 트랙을 바로 선택하여 재생 가능 상태로 세팅[cite: 5]
+      alert(`v${versionNum} 버전이 업로드되어 재생 준비되었습니다!`);
     }
   };
 
