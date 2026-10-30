@@ -11,7 +11,7 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
 
-  // 온보딩 프로필 상태
+  // 온보딩 프로필 상태 
   const [position, setPosition] = useState('프로듀서');
   const [genre, setGenre] = useState('힙합');
 
