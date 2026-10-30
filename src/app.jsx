@@ -11,7 +11,7 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
 
-  // 온보딩 프로필 상태 
+  // 온보딩 프로필 상태
   const [position, setPosition] = useState('프로듀서');
   const [genre, setGenre] = useState('힙합');
 
@@ -20,7 +20,7 @@ export default function App() {
   const [selectedChatRoom, setSelectedChatRoom] = useState(null); 
   const [selectedPublicPortfolio, setSelectedPublicPortfolio] = useState(null); 
 
-  // 요금제 설정 관련 상태 (이미지 14.jpg - S01, S02)
+  // 요금제 설정 관련 상태 (S01, S02)
   const [selectedPlan, setSelectedPlan] = useState('Pro');
 
   // 팔로우 상태 (V01)
@@ -120,11 +120,49 @@ export default function App() {
     return () => subscription?.unsubscribe();
   }, []);
 
-const handleSocialLogin = async (provider) => {
-    const { error } = await supabase.auth.signInWithOAuth({ 
+  // ⚡ [핵심 수정] 팀원이 입력한 지점 코멘트를 실시간 수신하여 리프레쉬하는 Realtime 구독 설정
+  useEffect(() => {
+    if (!currentPortfolioId) return;
+
+    // 해당 포트폴리오의 feedbacks 변경사항만 실시간 수신하는 채널 생성
+    const channel = supabase
+      .channel(`realtime_feedbacks_${currentPortfolioId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // INSERT, UPDATE, DELETE 전체 감지
+          schema: 'public',
+          table: 'feedbacks',
+          filter: `portfolio_id=eq.${currentPortfolioId}`
+        },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setComments((prev) => {
+              // 중복 추가 방지
+              if (prev.some((c) => c.id === payload.new.id)) return prev;
+              return [...prev, payload.new];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            setComments((prev) =>
+              prev.map((c) => (c.id === payload.new.id ? payload.new : c))
+            );
+          } else if (payload.eventType === 'DELETE') {
+            setComments((prev) => prev.filter((c) => c.id === payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentPortfolioId]);
+
+  const handleSocialLogin = async (provider) => {
+    const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: window.location.origin // 현재 접속 중인 주소(Vercel 또는 localhost)로 자동 리디렉션
+        redirectTo: window.location.origin
       }
     });
     if (error) alert(`${provider} 로그인 오류: ` + error.message);
@@ -140,14 +178,6 @@ const handleSocialLogin = async (provider) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) alert(error.message);
     }
-  };
-
-  const handleCompleteProfile = async (e) => {
-    e.preventDefault();
-    if (user) {
-      await supabase.auth.updateUser({ data: { position, genre } });
-    }
-    setAuthStep(1);
   };
 
   const handleLogout = async () => {
@@ -249,7 +279,7 @@ const handleSocialLogin = async (provider) => {
     }
   };
 
-  // 작업방 WaveSurfer 인스턴스 (W03) - 업로드된 파일의 유효한 URL 로드 보완
+  // 작업방 WaveSurfer 인스턴스 (W03)
   useEffect(() => {
     if (activeTab !== 'workspace' || !selectedTrackId || !waveformContainerRef.current) return;
 
@@ -284,7 +314,7 @@ const handleSocialLogin = async (provider) => {
     ws.on('pause', () => setIsPlaying(false));
 
     return () => ws.destroy();
-  }, [selectedTrackId, activeTab, isTimestampMode, tracks]);
+  }, [selectedTrackId, activeTab, isTimestampMode, tracks, comments]);
 
   // 공개 상세 페이지 WaveSurfer 인스턴스 (E06)
   useEffect(() => {
@@ -355,7 +385,11 @@ const handleSocialLogin = async (provider) => {
       console.error('타임스탬프 코멘트 저장 오류:', error.message);
       alert('코멘트 저장 중 오류가 발생했습니다: ' + error.message);
     } else if (data) {
-      setComments((prevComments) => [...prevComments, data]);
+      // Realtime 구독을 통해 자동으로 리스트에 추가되지만 만약에 대비해 클라이언트 state도 안전하게 보완
+      setComments((prevComments) => {
+        if (prevComments.some((c) => c.id === data.id)) return prevComments;
+        return [...prevComments, data];
+      });
       setTimestampInput('');
       setIsTimestampMode(false);
     }
@@ -366,8 +400,6 @@ const handleSocialLogin = async (provider) => {
     if (!targetComment) return;
 
     const newResolvedState = !targetComment.resolved;
-    const updated = comments.map(c => c.id === commentId ? { ...c, resolved: newResolvedState } : c);
-    setComments(updated);
 
     const { error } = await supabase
       .from('feedbacks')
@@ -386,18 +418,15 @@ const handleSocialLogin = async (provider) => {
     }
   };
 
-  // [기능 3.5] 새 버전 음원 업로드 및 재생 가능하도록 URL 보완
   const handleUploadNewVersion = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0 || !currentPortfolioId) return;
 
     const file = files[0];
-    const fileExt = file.name.split('.').pop();
-    const cleanFileName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_'); // 특수문자 정제
+    const cleanFileName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_');
     const fileName = `${Date.now()}_${cleanFileName}`;
     const filePath = `${currentPortfolioId}/${fileName}`;
 
-    // Supabase Storage 업로드 실행 ('audio_files' 버킷)
     const { error: uploadError } = await supabase.storage.from('audio_files').upload(filePath, file, {
       cacheControl: '3600',
       upsert: false
@@ -409,7 +438,6 @@ const handleSocialLogin = async (provider) => {
       return;
     }
 
-    // 퍼블릭 URL 획득
     const { data: publicUrlData } = supabase.storage.from('audio_files').getPublicUrl(filePath);
     const publicUrl = publicUrlData?.publicUrl;
 
@@ -434,7 +462,7 @@ const handleSocialLogin = async (provider) => {
       alert('트랙 정보 저장 실패: ' + dbError.message);
     } else if (data) {
       setTracks((prevTracks) => [...prevTracks, data]);
-      setSelectedTrackId(data.id); // 업로드 직후 해당 트랙을 바로 선택하여 재생 가능 상태로 세팅[cite: 5]
+      setSelectedTrackId(data.id);
       alert(`v${versionNum} 버전이 업로드되어 재생 준비되었습니다!`);
     }
   };
