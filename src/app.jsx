@@ -120,8 +120,13 @@ export default function App() {
     return () => subscription?.unsubscribe();
   }, []);
 
-  const handleSocialLogin = async (provider) => {
-    const { error } = await supabase.auth.signInWithOAuth({ provider });
+const handleSocialLogin = async (provider) => {
+    const { error } = await supabase.auth.signInWithOAuth({ 
+      provider,
+      options: {
+        redirectTo: window.location.origin // 현재 접속 중인 주소(Vercel 또는 localhost)로 자동 리디렉션
+      }
+    });
     if (error) alert(`${provider} 로그인 오류: ` + error.message);
   };
 
