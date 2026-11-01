@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">
+<defs><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".75" numOctaves="3" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope=".12"/></feComponentTransfer><feBlend in="SourceGraphic" mode="multiply"/></filter></defs>
+<g filter="url(#grain)"><rect width="600" height="600" fill="#d5ddc9"/><rect x="24" y="24" width="552" height="552" rx="265" fill="#e9e8d5"/>
+<path d="M282 508c39-96 1-171 24-232" fill="none" stroke="#405b45" stroke-width="4"/>
+<path d="M294 434C209 429 193 377 197 351c70-1 97 40 97 83Z" fill="#7b9474"/><path d="M302 385c65 2 98-47 97-74-66 3-96 37-97 74Z" fill="#92a888"/>
+<g fill="#f5f0dc" stroke="#b9bfa4" stroke-width="1"><ellipse cx="303" cy="220" rx="43" ry="85" transform="rotate(-9 303 278)"/><ellipse cx="303" cy="220" rx="43" ry="85" transform="rotate(51 303 278)"/><ellipse cx="303" cy="220" rx="43" ry="85" transform="rotate(111 303 278)"/><ellipse cx="303" cy="220" rx="43" ry="85" transform="rotate(171 303 278)"/><ellipse cx="303" cy="220" rx="43" ry="85" transform="rotate(231 303 278)"/><ellipse cx="303" cy="220" rx="43" ry="85" transform="rotate(291 303 278)"/></g><circle cx="303" cy="278" r="38" fill="#c5a96a"/><circle cx="303" cy="278" r="24" fill="#b29455"/>
+<g fill="#6d805f" opacity=".6"><circle cx="83" cy="322" r="2"/><circle cx="493" cy="250" r="2"/><circle cx="466" cy="422" r="2"/><circle cx="129" cy="146" r="2"/></g></g>
+<text x="300" y="79" text-anchor="middle" fill="#34513e" font-family="Georgia,serif" font-size="50" letter-spacing="-1">slow bloom</text><text x="301" y="104" text-anchor="middle" fill="#64755b" font-family="Arial,sans-serif" font-size="9" letter-spacing="3.5">IN YOUR OWN TIME</text>
+<text x="301" y="548" text-anchor="middle" fill="#526a4f" font-family="Arial,sans-serif" font-size="10" letter-spacing="3">VOLUME THREE • TAMI SESSIONS</text>
+</svg>

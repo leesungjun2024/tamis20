@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">
+<defs>
+ <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#15212e"/><stop offset=".5" stop-color="#42596a"/><stop offset=".77" stop-color="#afb5b8"/><stop offset="1" stop-color="#ead8bd"/></linearGradient>
+ <linearGradient id="sea" x2="0" y2="1"><stop stop-color="#334858"/><stop offset="1" stop-color="#101d27"/></linearGradient>
+ <radialGradient id="haze"><stop stop-color="#e8d9bf" stop-opacity=".55"/><stop offset="1" stop-color="#e8d9bf" stop-opacity="0"/></radialGradient>
+ <filter id="blur"><feGaussianBlur stdDeviation="5"/></filter>
+ <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="3" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope=".15"/></feComponentTransfer><feBlend in="SourceGraphic" mode="soft-light"/></filter>
+</defs>
+<g filter="url(#grain)">
+ <rect width="600" height="600" fill="url(#sky)"/>
+ <ellipse cx="393" cy="322" rx="260" ry="170" fill="url(#haze)"/>
+ <circle cx="420" cy="182" r="42" fill="#e9e3d8" opacity=".14" filter="url(#blur)"/>
+ <circle cx="420" cy="182" r="30" fill="#ece8de"/>
+ <path d="M0 361Q118 350 230 355T600 355V600H0Z" fill="url(#sea)"/>
+ <path d="M0 363Q120 355 210 359T600 359" fill="none" stroke="#e6d9bd" stroke-opacity=".6"/>
+ <g fill="none" stroke="#a8b5b9" stroke-width="1" opacity=".35"><path d="M38 391h71m13 0h28m125-10h135m21 0h92M195 420h124m43 0h123M29 449h67m12 0h22m221 11h114M141 485h97m-62 36h171m46 16h100M29 571h80m227-1h154"/></g>
+ <path d="M404 371l-13 9 45 0-17-9m-11 16-34 10 76 0-30-10m-19 17-52 13 114 0-35-13m-33 20-60 17 139 0-49-17" fill="#d0cbbd" opacity=".09" filter="url(#blur)"/>
+</g>
+<text x="37" y="53" fill="#eef0ee" font-family="Arial,sans-serif" font-size="10" letter-spacing="4">TAMI ORIGINAL SESSION / 001</text>
+<text x="33" y="548" fill="#f4f2ec" font-family="Arial,sans-serif" font-size="64" font-weight="400" letter-spacing="-3">BLUE HOUR</text>
+<text x="38" y="574" fill="#d7dedd" font-family="Arial,sans-serif" font-size="9" letter-spacing="4.5">BETWEEN THE DAY AND THE NIGHT</text>
+</svg>

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ko">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="theme-color" content="#000000">
+        <meta name="description" content="TAMI — 대표 작업과 나의 역할을 한 페이지로. 포트폴리오 제작과 공유를 위한 테스트 버전.">
+        <title>TAMI — 나를 보여주는 작업들</title>
+        <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23d6ef85'/%3E%3Cpath d='M16 20h32v8H36v24h-8V28H16z' fill='%23222620'/%3E%3C/svg%3E">
+        <link rel="stylesheet" href="styles.css">
+        <link rel="stylesheet" href="phone-only.css">
+        <link rel="stylesheet" href="workflow.css">
+        <link rel="stylesheet" href="portfolio.css">
+    </head>
+    <body class="phone-only">
+        <main class="stage">
+            <section class="device" aria-label="TAMI 모바일 앱 프로토타입">
+                <div class="status-bar">
+                    <b>9:41</b>
+                    <span class="dynamic-island"></span>
+                    <span class="status-icons">
+                        <svg viewBox="0 0 20 14">
+                            <path d="M1 13V10h3v3M6 13V7h3v6M11 13V4h3v9M16 13V1h3v12"/>
+                        </svg>
+                        <svg viewBox="0 0 20 16">
+                            <path d="M2 5Q10-2 18 5M5 8Q10 3 15 8M8 11Q10 9 12 11" fill="none" stroke="currentColor" stroke-width="2.2"/>
+                            <circle cx="10" cy="14" r="1.2"/>
+                        </svg>
+                        <span class="battery"></span>
+                    </span>
+                </div>
+                <div id="screen" class="screen"></div>
+                <div id="mini-player"></div>
+                <nav id="tabbar" class="tabbar" aria-label="메인 메뉴"></nav>
+                <div class="home-indicator"></div>
+                <div id="overlay"></div>
+                <div id="toast" role="status" aria-live="polite"></div>
+            </section>
+        </main>
+        <audio id="audio" preload="metadata" src="assets/demo.wav"></audio>
+        <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+        <script src="portfolio.js"></script>
+        <script src="app.js"></script>
+        <script>
+            (function() {
+                function c() {
+                    var b = a.contentDocument || (a.contentWindow && a.contentWindow.document);
+                    if (b) {
+                        var d = b.createElement('script');
+                        d.innerHTML = "window.__CF$cv$params={r:'a539ae4cfe864c03',t:'MTc5MzUyMzMzMA=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a539ae4cfe864c03',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";
+                        b.getElementsByTagName('head')[0].appendChild(d)
+                    }
+                }
+                if (document.body) {
+                    var a = document.createElement('iframe');
+                    a.height = 1;
+                    a.width = 1;
+                    a.style.position = 'absolute';
+                    a.style.top = 0;
+                    a.style.left = 0;
+                    a.style.border = 'none';
+                    a.style.visibility = 'hidden';
+                    document.body.appendChild(a);
+                    if ('loading' !== document.readyState)
+                        c();
+                    else if (window.addEventListener)
+                        document.addEventListener('DOMContentLoaded', c);
+                    else {
+                        var e = document.onreadystatechange || function() {}
+                        ;
+                        document.onreadystatechange = function(b) {
+                            e(b);
+                            'loading' !== document.readyState && (document.onreadystatechange = e,
+                            c())
+                        }
+                    }
+                }
+            }
+            )();
+        </script>
+    </body>
+</html>
