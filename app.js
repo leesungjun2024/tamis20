@@ -1,7 +1,7 @@
 /* TAMI: workspace interactions are demonstrations; portfolio uses persistent server storage. */
 const $ = s => document.querySelector(s);
 
-// --- Supabase 설정  및 초기화 ---
+// --- Supabase 설정  및 초기화 --
 const SUPABASE_URL = 'https://ymiisppfazwbcpfqqxxs.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InltaWlzcHBmYXp3YmNwZnFxeHhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2NjU1NzMsImV4cCI6MjEwODI0MTU3M30.GWMEDIbn0YOhGEX3MZ3KF4s4UF9cjl2avWCRVNvsAJw';
 
