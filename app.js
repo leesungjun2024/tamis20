@@ -126,6 +126,157 @@ if (!state || !Array.isArray(state.rooms) || !state.rooms.length)
         chatFiles: []
     };
 
+function startSheet() {
+    showSheet('TAMI 시작하기', `
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h2 style="font-size: 20px; font-weight: 700; margin: 0 0 6px 0; color: #1c1b18;">TAMI 시작하기</h2>
+        </div>
+        <div style="background: #f7f6f0; border: 1px solid #c8c5b8; border-radius: 16px; padding: 20px;">
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <button type="button" data-action="start-google" style="width: 100%; background: #fff; color: #333; border: 1px solid #c2bfb3; padding: 14px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
+                    구글로 계속
+                </button>
+                <button type="button" data-action="start-email" style="width: 100%; background: #1c1b18; color: #fff; border: none; padding: 14px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer;">
+                    이메일로 계속
+                </button>
+            </div>
+        </div>
+    `);
+}
+
+// --- 1. 로그인 탭 구분 상태 변수 ---
+let authTabMode = 'email'; // 'email' 또는 'social'
+
+// --- 2. 통합 로그인 모달 (소셜/이메일 탭 지원) ---
+function loginSheet(mode = 'email') {
+    authTabMode = mode;
+    
+    const isEmail = authTabMode === 'email';
+    
+    showSheet('TAMI 시작하기', `
+        ${sheetHeader('TAMI 시작하기')}
+        <div style="background: #f7f6f0; border: 1px solid #c8c5b8; border-radius: 16px; padding: 20px; margin-top: 10px;">
+            <!-- 탭 헤더 영역 -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3 style="font-size: 15px; font-weight: 700; color: #222; margin: 0; display: flex; align-items: center; gap: 6px;">
+                    ${isEmail ? '🔑 이메일 로그인' : '🌐 소셜 로그인'}
+                </h3>
+                <button type="button" data-action="toggle-auth-tab" style="background: none; border: none; color: #4a62d6; font-size: 12px; font-weight: 600; cursor: pointer; padding: 0;">
+                    ${isEmail ? '‹ 소셜 로그인' : '이메일 로그인 ›'}
+                </button>
+            </div>
+
+            <!-- 이메일 로그인 폼 -->
+            ${isEmail ? `
+                <form id="login-form">
+                    <div style="margin-bottom: 12px;">
+                        <input id="login-email" type="email" placeholder="email@example.com" value="krsungjun@gmail.com" required 
+                               style="width: 100%; padding: 12px 14px; border: 1px solid #c2bfb3; border-radius: 8px; font-size: 13px; box-sizing: border-box; background: #fff;">
+                    </div>
+                    <div style="margin-bottom: 16px;">
+                        <input id="login-password" type="password" placeholder="비밀번호" required 
+                               style="width: 100%; padding: 12px 14px; border: 1px solid #c2bfb3; border-radius: 8px; font-size: 13px; box-sizing: border-box; background: #fff;">
+                    </div>
+                    <button type="submit" style="width: 100%; background: #1c1b18; color: #fff; border: none; padding: 12px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;">
+                        로그인
+                    </button>
+                    <p id="login-status" style="color: #e53935; font-size: 12px; margin-top: 10px; text-align: center; font-weight: 500;"></p>
+                </form>
+            ` : `
+                <!-- 소셜 로그인 폼 -->
+                <div style="display: flex; flex-direction: column; gap: 10px; margin: 10px 0 16px;">
+                    <button id="btn-google-login" type="button" style="width: 100%; background: #fff; color: #333; border: 1px solid #c2bfb3; padding: 12px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                        <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
+                        Google 계정으로 계속하기
+                    </button>
+                </div>
+            `}
+
+            <!-- 회원가입 전환 링크 -->
+            <div style="text-align: center; margin-top: 18px;">
+                <button type="button" data-action="open-signup" style="background: none; border: none; color: #2e605d; font-size: 12px; text-decoration: underline; cursor: pointer;">
+                    계정이 없으신가요? 회원가입하기
+                </button>
+            </div>
+        </div>
+    `);
+
+    // 이벤트 리스너 바인딩
+    if (isEmail) {
+        $('#login-form').onsubmit = async e => {
+            e.preventDefault();
+            const email = $('#login-email').value.trim();
+            const password = $('#login-password').value.trim();
+            
+            const { data, error } = await _supabase.auth.signInWithPassword({ email, password });
+            if (error) {
+                $('#login-status').textContent = '로그인 실패: ' + error.message;
+            } else {
+                currentUser = data.user;
+                toast('성공적으로 로그인되었습니다.');
+                closeSheet();
+                route();
+            }
+        };
+    } else {
+        const googleBtn = $('#btn-google-login');
+        if (googleBtn) {
+            googleBtn.onclick = async () => {
+                const { error } = await _supabase.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: { redirectTo: window.location.origin }
+                });
+                if (error) toast('Google 로그인 실패: ' + error.message);
+            };
+        }
+    }
+}
+
+// --- 3. 회원가입 모달 ---
+function signUpSheet() {
+    showSheet('TAMI 회원가입', `
+        ${sheetHeader('TAMI 회원가입')}
+        <div style="background: #f7f6f0; border: 1px solid #c8c5b8; border-radius: 16px; padding: 20px; margin-top: 10px;">
+            <form id="signup-form">
+                <div style="margin-bottom: 12px;">
+                    <label style="display:block; font-size:11px; color:#666; margin-bottom:4px;">이메일</label>
+                    <input id="signup-email" type="email" placeholder="email@example.com" required 
+                           style="width: 100%; padding: 10px 12px; border: 1px solid #c2bfb3; border-radius: 8px; font-size: 13px; box-sizing: border-box; background: #fff;">
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display:block; font-size:11px; color:#666; margin-bottom:4px;">비밀번호 (6자리 이상)</label>
+                    <input id="signup-password" type="password" placeholder="비밀번호" minlength="6" required 
+                           style="width: 100%; padding: 10px 12px; border: 1px solid #c2bfb3; border-radius: 8px; font-size: 13px; box-sizing: border-box; background: #fff;">
+                </div>
+                <button type="submit" style="width: 100%; background: #2e605d; color: #fff; border: none; padding: 12px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;">
+                    가입하기
+                </button>
+                <p id="signup-status" style="color: #e53935; font-size: 12px; margin-top: 10px; text-align: center; font-weight: 500;"></p>
+            </form>
+            <div style="text-align: center; margin-top: 16px;">
+                <button type="button" data-action="open-login" style="background: none; border: none; color: #4a62d6; font-size: 12px; cursor: pointer;">
+                    이미 계정이 있으신가요? 로그인하기
+                </button>
+            </div>
+        </div>
+    `);
+
+    $('#signup-form').onsubmit = async e => {
+        e.preventDefault();
+        const email = $('#signup-email').value.trim();
+        const password = $('#signup-password').value.trim();
+
+        const { data, error } = await _supabase.auth.signUp({ email, password });
+        if (error) {
+            $('#signup-status').textContent = '가입 실패: ' + error.message;
+        } else {
+            toast('가입 확인 이메일이 발송되었습니다. 이메일을 확인해 주세요!');
+            closeSheet();
+        }
+    };
+}
+
 let currentUser = null;
 
 // --- Supabase 연동 로직 시작 (workgroups 및 workgroup_members 기반) ---
@@ -517,7 +668,10 @@ function renderPortfolio(id) {
    // const publicHarin = id === 'harin';
     const pub = own || publicHarin ? state.published.map(roomById).filter(Boolean) : [state.rooms.find(r => r.cover === a.cover) || seeds[0]];
     const theme = own || publicHarin ? state.theme : 'light';
-    $('#screen').innerHTML = `<div class="page ${theme === 'dark' ? 'dark-profile' : theme === 'warm' ? 'warm-profile' : ''}">${own ? `<div class="toolbar"><h2 style="text-align:left">내 포트폴리오</h2><button class="icon-btn" data-action="theme" aria-label="포트폴리오 꾸미기">${icon('edit')}</button><button class="icon-btn" data-action="share-portfolio" aria-label="포트폴리오 공유">${icon('share')}</button></div>` : `<div class="toolbar"><button class="icon-btn" data-action="nav" data-id="explore" aria-label="탐색으로 돌아가기">${icon('back')}</button><h2>Artist portfolio</h2><button class="icon-btn" data-action="share-portfolio" aria-label="포트폴리오 공유">${icon('share')}</button></div>`}<div class="profile-top"><img class="profile-banner" src="assets/${a.cover}.svg" alt="아티스트 배너"><div class="profile-identity"><div class="profile-avatar">${a.name.slice(0, 1).toUpperCase()}.</div><h1>${a.name}</h1><p class="profile-role">${a.role} · Seoul, KR</p><p class="profile-intro">${a.line}<br>오래 머물고 싶은 음악을 만듭니다.</p><div class="tag-row"><span class="tag">${a.genre}</span><span class="tag">Songwriting</span><span class="tag">협업 가능</span></div></div></div><div class="profile-actions"><button class="primary ${own ? '' : 'lime'}" data-action="${own ? 'share-portfolio' : 'contact'}" data-id="${a.id}">${icon(own ? 'link' : 'chat')}${own ? '내 페이지 공유하기' : '협업 이야기 나누기'}</button>${own ? `<button class="secondary" data-action="theme" aria-label="테마 변경">${icon('edit')}</button>` : ''}</div><div class="section-heading"><h3>소리로 소개할게요.</h3><span>SELECTED WORKS</span></div>${pub.map( (r, i) => `<div class="track-row"><img src="${art(r)}" alt="${esc(r.title)} 앨범 커버"><div class="grow"><h3>${esc(r.title)} ${i === 0 ? '<span class="tag" style="font-size:7px">대표작</span>' : ''}</h3><p>${r.publishedCredits === false ? 'Original track' : 'Written & performed by ' + a.name} · ${fmt(r.duration)}</p></div><button data-action="track-play" data-id="${r.id}" aria-label="${esc(r.title)} 재생">${icon('play')}</button></div>`).join('') || '<div class="empty">작업을 완성하고 첫 대표작을 담아보세요.</div>'}<div class="section-heading"><h3>음악이 되기까지</h3><span>BEHIND THE SOUND</span></div><div class="process-card"><div class="date">A NOTE FROM ${a.name.toUpperCase()}</div><strong>완벽한 시작보다, 솔직한 첫 소리.</strong><br>방 안에서 흥얼거린 멜로디에 친구들의 소리가 더해졌어요. 그렇게 우리의 음악이 되었습니다.</div>${pub.filter(r => r.publishedStory).map(r => `<div class="process-card gap-top"><strong>${esc(r.title)}</strong><br>작은 아이디어가 하나의 음악이 되기까지.</div>`).join('')}
+   // 로그인된 사용자의 이메일/ID를 괄호 형태로 정의
+    const userIdentifier = currentUser ? `(${currentUser.email || currentUser.id})` : '';
+
+    $('#screen').innerHTML = `<div class="page ${theme === 'dark' ? 'dark-profile' : theme === 'warm' ? 'warm-profile' : ''}">${own ? `<div class="toolbar"><h2 style="text-align:left">내 포트폴리오 <span style="font-size:12px; font-weight:normal; opacity:0.7;">${userIdentifier}</span></h2><button class="icon-btn" data-action="theme" aria-label="포트폴리오 꾸미기">${icon('edit')}</button><button class="icon-btn" data-action="share-portfolio" aria-label="포트폴리오 공유">${icon('share')}</button></div>` : `<div class="toolbar"><button class="icon-btn" data-action="nav" data-id="explore" aria-label="탐색으로 돌아가기">${icon('back')}</button><h2>Artist portfolio</h2><button class="icon-btn" data-action="share-portfolio" aria-label="포트폴리오 공유">${icon('share')}</button></div>`}<div class="profile-top"><img class="profile-banner" src="assets/${a.cover}.svg" alt="아티스트 배너"><div class="profile-identity"><div class="profile-avatar">${a.name.slice(0, 1).toUpperCase()}.</div><h1>${a.name}</h1><p class="profile-role">${a.role} · Seoul, KR</p><p class="profile-intro">${a.line}<br>오래 머물고 싶은 음악을 만듭니다.</p><div class="tag-row"><span class="tag">${a.genre}</span><span class="tag">Songwriting</span><span class="tag">협업 가능</span></div></div></div><div class="profile-actions"><button class="primary ${own ? '' : 'lime'}" data-action="${own ? 'share-portfolio' : 'contact'}" data-id="${a.id}">${icon(own ? 'link' : 'chat')}${own ? '내 페이지 공유하기' : '협업 이야기 나누기'}</button>${own ? `<button class="secondary" data-action="theme" aria-label="테마 변경">${icon('edit')}</button>` : ''}</div><div class="section-heading"><h3>소리로 소개할게요.</h3><span>SELECTED WORKS</span></div>${pub.map( (r, i) => `<div class="track-row"><img src="${art(r)}" alt="${esc(r.title)} 앨범 커버"><div class="grow"><h3>${esc(r.title)} ${i === 0 ? '<span class="tag" style="font-size:7px">대표작</span>' : ''}</h3><p>${r.publishedCredits === false ? 'Original track' : 'Written & performed by ' + a.name} · ${fmt(r.duration)}</p></div><button data-action="track-play" data-id="${r.id}" aria-label="${esc(r.title)} 재생">${icon('play')}</button></div>`).join('') || '<div class="empty">작업을 완성하고 첫 대표작을 담아보세요.</div>'}<div class="section-heading"><h3>음악이 되기까지</h3><span>BEHIND THE SOUND</span></div><div class="process-card"><div class="date">A NOTE FROM ${a.name.toUpperCase()}</div><strong>완벽한 시작보다, 솔직한 첫 소리.</strong><br>방 안에서 흥얼거린 멜로디에 친구들의 소리가 더해졌어요. 그렇게 우리의 음악이 되었습니다.</div>${pub.filter(r => r.publishedStory).map(r => `<div class="process-card gap-top"><strong>${esc(r.title)}</strong><br>작은 아이디어가 하나의 음악이 되기까지.</div>`).join('')}
 
     ${own ? (currentUser ? `
         <div style="margin: 10px 0 7px; text-align: center;">
@@ -746,6 +900,27 @@ document.addEventListener('click', async e => {
         break;
     case 'wf-logout':
         await handleSignOut();
+        break;
+    case 'toggle-auth-tab':
+        loginSheet(authTabMode === 'email' ? 'social' : 'email');
+        break;
+    case 'open-signup':
+        signUpSheet();
+        break;
+    case 'open-login':
+        loginSheet('email');
+        break;
+    case 'start-google':
+        {
+            const { error } = await _supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: { redirectTo: window.location.origin }
+            });
+            if (error) toast('Google 로그인 실패: ' + error.message);
+        }
+        break;
+    case 'start-email':
+        loginSheet('email');
         break;
     }
 }
@@ -1893,7 +2068,20 @@ window.addEventListener('hashchange', route);
 
 // 초기화 시 유저 세션 및 Supabase workgroups 데이터 로드 후 라우팅 실행
 (async () => {
+    // URL 해시에 access_token이 포함되어 있는 경우 Supabase가 세션을 처리하도록 유도
+    if (window.location.hash && window.location.hash.includes('access_token')) {
+        // Supabase가 자동으로 해시의 토큰을 읽어 세션을 설정합니다.
+        await _supabase.auth.getSession();
+        // 토큰 정리를 위해 해시를 기본 #portfolio로 깔끔하게 변경
+        window.history.replaceState(null, '', window.location.pathname + '#portfolio');
+    }
+
     await checkUserSession();
     await loadRoomsFromSupabase();
     route();
+    
+    // 로그인된 유저가 없을 때만 시작 화면 띄우기
+    if (!currentUser) {
+        startSheet();
+    }
 })();
