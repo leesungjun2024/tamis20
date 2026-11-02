@@ -1,7 +1,7 @@
 /* TAMI: workspace interactions are demonstrations; portfolio uses persistent server storage. */
 const $ = s => document.querySelector(s);
 
-// --- Supabase 설정  및 초기화 --
+// --- Supabase 설정 및 초기화 --
 const SUPABASE_URL = 'https://ymiisppfazwbcpfqqxxs.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InltaWlzcHBmYXp3YmNwZnFxeHhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2NjU1NzMsImV4cCI6MjEwODI0MTU3M30.GWMEDIbn0YOhGEX3MZ3KF4s4UF9cjl2avWCRVNvsAJw';
 
@@ -111,11 +111,12 @@ const seeds = [{
     duration: 48,
     comments: []
 }];
+
 let state;
 try {
     state = JSON.parse(localStorage.getItem('tami-demo-v1'))
 } catch {}
-;if (!state || !Array.isArray(state.rooms) || !state.rooms.length)
+if (!state || !Array.isArray(state.rooms) || !state.rooms.length)
     state = {
         rooms: structuredClone(seeds),
         published: ['slow-bloom'],
@@ -124,14 +125,112 @@ try {
         chatPeople: {},
         chatFiles: []
     };
+
+let currentUser = null;
+
+// --- Supabase 연동 로직 시작 (workgroups 및 workgroup_members 기반) ---
+let unsubscribeRealtime = null;
+
+async function checkUserSession() {
+    try {
+        const { data: { user } } = await _supabase.auth.getUser();
+        currentUser = user;
+    } catch {
+        currentUser = null;
+    }
+}
+
+async function loadRoomsFromSupabase() {
+    try {
+        const { data, error } = await _supabase
+            .from('workgroups')
+            .select('*, tracks(*), feedbacks(*), workgroup_members(*)')
+            .order('created_at', { ascending: false });
+
+        if (!error && data && data.length > 0) {
+            state.rooms = data.map(dbRoom => ({
+                id: dbRoom.id,
+                title: dbRoom.workgroup_name,
+                subtitle: dbRoom.description || '작업방 데모',
+                genre: 'Work in progress',
+                cover: 'blue-hour',
+                status: dbRoom.view_yn === 'Y' ? 'progress' : 'done',
+                people: dbRoom.workgroup_members?.map(m => m.name || m.member_email) || ['하린'],
+                duration: 48,
+                versions: dbRoom.tracks?.map(t => ({
+                    id: t.id,
+                    label: t.label || 'v1',
+                    duration: t.duration || 48,
+                    localFile: true,
+                    filename: t.filename || 'audio.mp3',
+                    fileUrl: t.file_url
+                })) || [{ id: dbRoom.id + '-v1', label: 'v1', duration: 48, localFile: false, filename: 'Original demo.wav' }],
+                activeVersion: dbRoom.tracks?.[0]?.id || (dbRoom.id + '-v1'),
+                comments: dbRoom.feedbacks?.map(f => ({
+                    id: f.id,
+                    name: f.name,
+                    start: f.start_time || 0,
+                    at: f.start_time || 0,
+                    text: f.text,
+                    resolved: f.resolved || false,
+                    replies: f.replies || [],
+                    versionId: dbRoom.tracks?.[0]?.id || (dbRoom.id + '-v1'),
+                    time: '방금 전'
+                })) || []
+            }));
+        }
+    } catch (err) {
+        console.warn('Supabase DB 연결 실패, 로컬 상태를 사용합니다:', err.message);
+    }
+}
+
+function subscribeToRoomFeedbacks(roomId) {
+    if (unsubscribeRealtime) {
+        unsubscribeRealtime();
+        unsubscribeRealtime = null;
+    }
+
+    const channel = _supabase
+        .channel(`room-feedbacks-${roomId}`)
+        .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'feedbacks', filter: `workgroup_id=eq.${roomId}` },
+            payload => {
+                const newComment = {
+                    id: payload.new.id,
+                    name: payload.new.name,
+                    start: payload.new.start_time,
+                    at: payload.new.start_time,
+                    text: payload.new.text,
+                    resolved: payload.new.resolved || false,
+                    replies: payload.new.replies || [],
+                    versionId: currentRoom?.activeVersion,
+                    time: '방금 전'
+                };
+                if (currentRoom && !currentRoom.comments.some(c => c.id === newComment.id)) {
+                    currentRoom.comments.push(newComment);
+                    renderDetail();
+                    paintWave();
+                    toast('실시간으로 새로운 코멘트가 추가되었습니다.');
+                }
+            }
+        )
+        .subscribe();
+
+    unsubscribeRealtime = () => {
+        _supabase.removeChannel(channel);
+    };
+}
+// --- Supabase 연동 로직 끝 ---
+
 const persist = () => {
     try {
         localStorage.setItem('tami-demo-v1', JSON.stringify(state))
     } catch {
         toast('저장 공간이 부족해 이번 화면에서만 유지됩니다.')
     }
-}
-;
+};
+
 const audio = $('#audio');
 let currentRoom = null, playingRoom = null, view = 'work', filter = 'all', selection = null, segmentEnd = null, loop = false, activeDetail = 'comments', guest = false, sheetLastFocus = null, modalType = '', toastTimer, uploadFile = null, uploadChoice = false, objectURLs = new Map(), wavePeaks = Array.from({
     length: 64
@@ -151,6 +250,15 @@ fetch('assets/waveform.json').then(r => r.json()).then(d => {
 const roomById = id => state.rooms.find(r => r.id === id) || sharedRoom?.id === id && sharedRoom || state.rooms[0];
 const art = r => `assets/${r.cover || 'blue-hour'}.svg`;
 const avatars = r => `<div class="avatar-stack">${r.people.slice(0, 3).map( (n, i) => `<span class="avatar a${i + 1}" title="${esc(n)}">${esc(n.slice(0, 1))}</span>`).join('')}</div>`;
+
+async function checkUserSession() {
+    try {
+        const { data: { user } } = await _supabase.auth.getUser();
+        currentUser = user;
+    } catch {
+        currentUser = null;
+    }
+}
 function toast(t) {
     clearTimeout(toastTimer);
     $('#toast').textContent = t;
@@ -208,7 +316,8 @@ function ensureAudio(r) {
         return true;
     audio.pause();
     playingRoom = r.id;
-    audio.src = objectURLs.get(r.id) || 'assets/demo.wav';
+    const v = versionFor(r);
+    audio.src = objectURLs.get(r.id) || v.fileUrl || 'assets/demo.wav';
     audio.load();
     segmentEnd = null;
     return true
@@ -265,6 +374,36 @@ function closeSheet() {
         sheetLastFocus.focus()
 }
 const sheetHeader = title => `<div class="sheet-header"><h2>${title}</h2><button class="icon-btn" data-action="close" aria-label="닫기">${icon('close')}</button></div>`;
+
+function loginSheet() {
+    showSheet('로그인', `
+        ${sheetHeader('로그인')}
+        <p>작업방을 만들고 데이터베이스와 동기화하려면 로그인해 주세요.</p>
+        <form id="login-form">
+            <label class="field">이메일<input id="login-email" type="email" placeholder="email@example.com" required></label>
+            <label class="field">비밀번호<input id="login-password" type="password" placeholder="비밀번호" required></label>
+            <button class="primary lime gap-top" type="submit">로그인하기</button>
+            <p id="login-status" class="caption gap-top" style="color:red;"></p>
+        </form>
+    `);
+    
+    $('#login-form').onsubmit = async e => {
+        e.preventDefault();
+        const email = $('#login-email').value.trim();
+        const password = $('#login-password').value.trim();
+        
+        const { data, error } = await _supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+            $('#login-status').textContent = '로그인 실패: ' + error.message;
+        } else {
+            currentUser = data.user;
+            toast('로그인되었습니다.');
+            closeSheet();
+            route();
+        }
+    };
+}
+
 function chooseFile(f) {
     if (!f)
         return;
@@ -375,10 +514,26 @@ function filterArtists(genre) {
 function renderPortfolio(id) {
     const own = !id;
     const a = artists.find(a => a.id === id) || artists[0];
-    const publicHarin = id === 'harin';
+   // const publicHarin = id === 'harin';
     const pub = own || publicHarin ? state.published.map(roomById).filter(Boolean) : [state.rooms.find(r => r.cover === a.cover) || seeds[0]];
     const theme = own || publicHarin ? state.theme : 'light';
-    $('#screen').innerHTML = `<div class="page ${theme === 'dark' ? 'dark-profile' : theme === 'warm' ? 'warm-profile' : ''}">${own ? `<div class="toolbar"><h2 style="text-align:left">내 포트폴리오</h2><button class="icon-btn" data-action="theme" aria-label="포트폴리오 꾸미기">${icon('edit')}</button><button class="icon-btn" data-action="share-portfolio" aria-label="포트폴리오 공유">${icon('share')}</button></div>` : `<div class="toolbar"><button class="icon-btn" data-action="nav" data-id="explore" aria-label="탐색으로 돌아가기">${icon('back')}</button><h2>Artist portfolio</h2><button class="icon-btn" data-action="share-portfolio" aria-label="포트폴리오 공유">${icon('share')}</button></div>`}<div class="profile-top"><img class="profile-banner" src="assets/${a.cover}.svg" alt="아티스트 배너"><div class="profile-identity"><div class="profile-avatar">${a.name.slice(0, 1).toUpperCase()}.</div><h1>${a.name}</h1><p class="profile-role">${a.role} · Seoul, KR</p><p class="profile-intro">${a.line}<br>오래 머물고 싶은 음악을 만듭니다.</p><div class="tag-row"><span class="tag">${a.genre}</span><span class="tag">Songwriting</span><span class="tag">협업 가능</span></div></div></div><div class="profile-actions"><button class="primary ${own ? '' : 'lime'}" data-action="${own ? 'share-portfolio' : 'contact'}" data-id="${a.id}">${icon(own ? 'link' : 'chat')}${own ? '내 페이지 공유하기' : '협업 이야기 나누기'}</button>${own ? `<button class="secondary" data-action="theme" aria-label="테마 변경">${icon('edit')}</button>` : ''}</div><div class="section-heading"><h3>소리로 소개할게요.</h3><span>SELECTED WORKS</span></div>${pub.map( (r, i) => `<div class="track-row"><img src="${art(r)}" alt="${esc(r.title)} 앨범 커버"><div class="grow"><h3>${esc(r.title)} ${i === 0 ? '<span class="tag" style="font-size:7px">대표작</span>' : ''}</h3><p>${r.publishedCredits === false ? 'Original track' : 'Written & performed by ' + a.name} · ${fmt(r.duration)}</p></div><button data-action="track-play" data-id="${r.id}" aria-label="${esc(r.title)} 재생">${icon('play')}</button></div>`).join('') || '<div class="empty">작업을 완성하고 첫 대표작을 담아보세요.</div>'}<div class="section-heading"><h3>음악이 되기까지</h3><span>BEHIND THE SOUND</span></div><div class="process-card"><div class="date">A NOTE FROM ${a.name.toUpperCase()}</div><strong>완벽한 시작보다, 솔직한 첫 소리.</strong><br>방 안에서 흥얼거린 멜로디에 친구들의 소리가 더해졌어요. 그렇게 우리의 음악이 되었습니다.</div>${pub.filter(r => r.publishedStory).map(r => `<div class="process-card gap-top"><strong>${esc(r.title)}</strong><br>작은 아이디어가 하나의 음악이 되기까지.</div>`).join('')}<p class="mobile-demo-note">MADE WITH tami ✳ · 샘플 포트폴리오</p></div>`
+    $('#screen').innerHTML = `<div class="page ${theme === 'dark' ? 'dark-profile' : theme === 'warm' ? 'warm-profile' : ''}">${own ? `<div class="toolbar"><h2 style="text-align:left">내 포트폴리오</h2><button class="icon-btn" data-action="theme" aria-label="포트폴리오 꾸미기">${icon('edit')}</button><button class="icon-btn" data-action="share-portfolio" aria-label="포트폴리오 공유">${icon('share')}</button></div>` : `<div class="toolbar"><button class="icon-btn" data-action="nav" data-id="explore" aria-label="탐색으로 돌아가기">${icon('back')}</button><h2>Artist portfolio</h2><button class="icon-btn" data-action="share-portfolio" aria-label="포트폴리오 공유">${icon('share')}</button></div>`}<div class="profile-top"><img class="profile-banner" src="assets/${a.cover}.svg" alt="아티스트 배너"><div class="profile-identity"><div class="profile-avatar">${a.name.slice(0, 1).toUpperCase()}.</div><h1>${a.name}</h1><p class="profile-role">${a.role} · Seoul, KR</p><p class="profile-intro">${a.line}<br>오래 머물고 싶은 음악을 만듭니다.</p><div class="tag-row"><span class="tag">${a.genre}</span><span class="tag">Songwriting</span><span class="tag">협업 가능</span></div></div></div><div class="profile-actions"><button class="primary ${own ? '' : 'lime'}" data-action="${own ? 'share-portfolio' : 'contact'}" data-id="${a.id}">${icon(own ? 'link' : 'chat')}${own ? '내 페이지 공유하기' : '협업 이야기 나누기'}</button>${own ? `<button class="secondary" data-action="theme" aria-label="테마 변경">${icon('edit')}</button>` : ''}</div><div class="section-heading"><h3>소리로 소개할게요.</h3><span>SELECTED WORKS</span></div>${pub.map( (r, i) => `<div class="track-row"><img src="${art(r)}" alt="${esc(r.title)} 앨범 커버"><div class="grow"><h3>${esc(r.title)} ${i === 0 ? '<span class="tag" style="font-size:7px">대표작</span>' : ''}</h3><p>${r.publishedCredits === false ? 'Original track' : 'Written & performed by ' + a.name} · ${fmt(r.duration)}</p></div><button data-action="track-play" data-id="${r.id}" aria-label="${esc(r.title)} 재생">${icon('play')}</button></div>`).join('') || '<div class="empty">작업을 완성하고 첫 대표작을 담아보세요.</div>'}<div class="section-heading"><h3>음악이 되기까지</h3><span>BEHIND THE SOUND</span></div><div class="process-card"><div class="date">A NOTE FROM ${a.name.toUpperCase()}</div><strong>완벽한 시작보다, 솔직한 첫 소리.</strong><br>방 안에서 흥얼거린 멜로디에 친구들의 소리가 더해졌어요. 그렇게 우리의 음악이 되었습니다.</div>${pub.filter(r => r.publishedStory).map(r => `<div class="process-card gap-top"><strong>${esc(r.title)}</strong><br>작은 아이디어가 하나의 음악이 되기까지.</div>`).join('')}
+
+    ${own ? (currentUser ? `
+        <div style="margin: 10px 0 7px; text-align: center;">
+            <button data-action="wf-logout" style="background: transparent; border: 1px solid #d5dbce; color: #5a6650; font-size: 8px; font-weight: 500; padding: 8px 16px; border-radius: 20px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                SIGN OUT
+            </button>
+        </div>
+    ` : `
+        <div style="margin: 10px 0 7px; text-align: center;">
+            <button data-action="wf-login" style="background: transparent; border: 1px solid #d5dbce; color: #5a6650; font-size: 8px; font-weight: 500; padding: 8px 16px; border-radius: 20px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                SIGN IN
+            </button>
+        </div>
+    `) : ''}
+
+    <p class="mobile-demo-note">MADE WITH tami ✳ · 샘플 포트폴리오</p></div>`
 }
 function themeSheet() {
     themeDraft = state.theme;
@@ -586,6 +741,12 @@ document.addEventListener('click', async e => {
         } else
             navigate('#room/blue-hour');
         break;
+    case 'wf-login':
+        loginSheet();
+        break;
+    case 'wf-logout':
+        await handleSignOut();
+        break;
     }
 }
 );
@@ -612,6 +773,7 @@ document.addEventListener('keydown', e => {
     }
 }
 );
+
 // Workroom and messages are local demonstrations. Published portfolios are separate.
 const workflow = {
     stamp: false,
@@ -692,13 +854,20 @@ function activateVersion(r, id) {
 }
 function route() {
     const hash = location.hash.slice(1) || 'portfolio';
-    if (workflow.attachmentAudio) {
-        workflow.attachmentAudio.pause();
-        workflow.attachmentAudio = null
+    // #portfolio인 경우 app.js 내부의 renderPortfolio를 직접 호출하도록 처리
+    if (hash === 'portfolio') {
+        closeSheet();
+        audio.pause();
+        playingRoom = null;
+        currentRoom = null;
+        guest = false;
+        view = 'portfolio';
+        renderNav();
+        $('#tabbar').style.display = 'flex';
+        $('#mini-player').innerHTML = '';
+        renderPortfolio();
+        return;
     }
-    workflow.stamp = false;
-    workflow.stampConfirmed = false;
-    workflow.liveId = null;
     if (window.TamiPortfolio?.isRoute('#' + hash)) {
         closeSheet();
         audio.pause();
@@ -747,6 +916,7 @@ function route() {
             audio.pause();
         view = 'room';
         renderRoom();
+        subscribeToRoomFeedbacks(currentRoom.id); // Supabase 실시간 동기화 채널 연결
     } else if (hash.startsWith('inquiry/')) {
         let name;
         try {
@@ -776,6 +946,10 @@ function route() {
         view = 'artist';
         renderPortfolio(hash.split('/')[1])
     } else {
+        if (unsubscribeRealtime) {
+            unsubscribeRealtime();
+            unsubscribeRealtime = null;
+        }
         view = ['work', 'explore', 'messages', 'portfolio'].includes(hash) ? hash : 'portfolio';
         renderMain()
     }
@@ -818,12 +992,27 @@ function renderDetail() {
 function commentsHTML(r) {
     return roomComments(r).slice().sort( (a, b) => commentTime(a) - commentTime(b)).map( (c, i) => `<article class="comment ${c.resolved ? 'wf-resolved' : ''}"><span class="avatar a${i % 3 + 2}">${esc(c.name.slice(0, 1))}</span><div class="comment-body"><div class="comment-meta"><strong>${esc(c.name)}</strong><small>${c.resolved ? '✓ 해결됨' : esc(c.time || '방금 전')}</small></div><button class="comment-time" data-action="wf-comment-play" data-id="${esc(c.id)}" aria-label="${fmt(commentTime(c))}부터 재생">${icon('play')}${fmt(commentTime(c))}</button><p>${esc(c.text)}</p><div class="wf-comment-actions"><button data-action="wf-reply" data-id="${esc(c.id)}">답글 ${c.replies.length || ''}</button><button data-action="wf-resolve" data-id="${esc(c.id)}" aria-pressed="${!!c.resolved}">${c.resolved ? '해결 취소' : '해결됨 표시'}</button></div>${c.replies.map(x => `<div class="wf-reply"><b>${esc(x.name)}</b><p>${esc(x.text)}</p></div>`).join('')}</div></article>`).join('') || '<div class="empty">아직 이 버전의 코멘트가 없어요.<br>타임스탬프로 첫 아이디어를 남겨 주세요.</div>'
 }
-function submitComment(e) {
+async function submitComment(e) {
     e.preventDefault();
     const text = $('#comment-text').value.trim()
       , name = $('#comment-name').value.trim();
     if (!text || !name)
         return;
+
+    // Supabase feedbacks 테이블 데이터 동기화 (workgroup_id 연동)
+    try {
+        const { error } = await _supabase.from('feedbacks').insert([{
+            workgroup_id: currentRoom.id,
+            name: name,
+            text: text,
+            start_time: workflow.stampTime,
+            resolved: false
+        }]);
+        if (error) console.error('Supabase 피드백 저장 오류:', error.message);
+    } catch (err) {
+        console.warn('Supabase DB 동기화 실패:', err);
+    }
+
     currentRoom.comments.push({
         id: crypto.randomUUID(),
         name,
@@ -1098,8 +1287,56 @@ function createSheet(addToExisting=false) {
         const names = [...new Set(['하린', ...$('#room-members').value.split(',').map(x => x.trim()).filter(Boolean)])].slice(0, 12)
           , file = $('#room-audio-file').files[0]
           , sample = $('#room-sample').checked;
+
+        let dbRoomId = crypto.randomUUID();
+        try {
+            // 1. 현재 로그인된 사용자 정보 가져오기
+            const { data: { user }, error: userError } = await _supabase.auth.getUser();
+            
+            if (userError || !user) {
+                toast('로그인이 필요한 기능입니다.');
+                loginSheet();
+                const submit = e.target.querySelector('[type=submit]');
+                if (submit) submit.disabled = false;
+                return;
+            }
+
+            // 2. workgroups 테이블에 작업방 생성 (스키마 컬럼명 일치)
+            const { data: groupData, error: groupError } = await _supabase.from('workgroups').insert([{
+                workgroup_name: title,
+                description: 'Work in progress',
+                user_id: user.id,
+                user_email: user.email,
+                view_yn: 'Y',
+                del_yn: 'N'
+            }]).select().single();
+
+            if (groupError) {
+                console.error('Supabase workgroups 삽입 오류:', groupError.message);
+                throw groupError;
+            }
+
+            if (groupData) {
+                dbRoomId = groupData.id;
+
+                // 3. workgroup_members 테이블에 참여자 등록 (workgroup_id 사용)
+                const memberInserts = names.map(name => ({
+                    workgroup_id: dbRoomId,
+                    member_email: name.includes('@') ? name : `${name.toLowerCase().replace(/\s+/g, '')}@example.com`,
+                    role: 'editor'
+                }));
+                
+                const { error: memberError } = await _supabase.from('workgroup_members').insert(memberInserts);
+                if (memberError) {
+                    console.error('Supabase workgroup_members 삽입 오류:', memberError.message);
+                }
+            }
+        } catch (err) {
+            console.warn('Supabase 작업방 생성 중 예외 발생:', err);
+        }
+
         const r = normalizeRoom({
-            id: crypto.randomUUID(),
+            id: dbRoomId,
             title,
             genre: 'Work in progress',
             cover: 'blue-hour',
@@ -1434,6 +1671,16 @@ function chatPortfolioSheet() {
         renderChat(workflow.chatId)
     }
 }
+async function handleSignOut() {
+    const { error } = await _supabase.auth.signOut();
+    if (!error) {
+        currentUser = null;
+        toast('로그아웃되었습니다.');
+        route();
+    } else {
+        toast('로그아웃 실패: ' + error.message);
+    }
+}
 document.addEventListener('click', async e => {
     const b = e.target.closest('[data-action]');
     if (!b || !b.dataset.action.startsWith('wf-'))
@@ -1628,6 +1875,12 @@ document.addEventListener('click', async e => {
     case 'wf-chat-portfolio':
         chatPortfolioSheet();
         break;
+    case 'wf-login':
+        loginSheet();
+        break;
+    case 'wf-logout':
+        await handleSignOut();
+        break;
     }
 }
 , true);
@@ -1637,4 +1890,10 @@ audio.addEventListener('pause', updatePlayerUI);
 audio.addEventListener('ended', updatePlayerUI);
 
 window.addEventListener('hashchange', route);
-route();
+
+// 초기화 시 유저 세션 및 Supabase workgroups 데이터 로드 후 라우팅 실행
+(async () => {
+    await checkUserSession();
+    await loadRoomsFromSupabase();
+    route();
+})();
