@@ -1196,11 +1196,10 @@ async function submitComment(e) {
     const name = $('#comment-name').value.trim();
     if (!text || !name) return;
 
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     let targetTrackId = null;
 
     try {
-        // 1. 현재 작업방(workgroup_id = currentRoom.id)에 연결된 트랙이 DB에 있는지 먼저 조회합니다.
+        // 1. 현재 작업방(workgroup_id = currentRoom.id)에 연결된 트랙이 DB에 있는지 조회합니다.
         const { data: existingTracks, error: fetchErr } = await _supabase
             .from('tracks')
             .select('id')
@@ -1210,7 +1209,7 @@ async function submitComment(e) {
         if (!fetchErr && existingTracks && existingTracks.length > 0) {
             targetTrackId = existingTracks[0].id;
         } else {
-            // 2. 만약 DB에 등록된 트랙이 아예 없다면, 안전하게 기본 트랙을 하나 생성합니다.
+            // 2. DB에 등록된 트랙이 없다면 기본 트랙을 하나 생성합니다.
             const { data: newTrack, error: insErr } = await _supabase
                 .from('tracks')
                 .insert([{
@@ -1234,7 +1233,6 @@ async function submitComment(e) {
 
         const { data: { user } } = await _supabase.auth.getUser();
 
-        // 3. 확실하게 보장된 유효한 UUID(targetTrackId)를 사용하여 feedbacks 테이블에 저장합니다.
         const insertData = {
             track_id: targetTrackId,
             portfolio_id: null,
@@ -1246,13 +1244,34 @@ async function submitComment(e) {
             resolved: false
         };
 
-        const { error: fbErr } = await _supabase.from('feedbacks').insert([insertData]);
+        // 3. .select().single()을 사용하여 서버에서 생성된 실제 레코드(ID 포함)를 반환받습니다.
+        const { data: savedFeedback, error: fbErr } = await _supabase
+            .from('feedbacks')
+            .insert([insertData])
+            .select()
+            .single();
+
         if (fbErr) {
             console.error('Supabase 피드백 저장 오류:', fbErr.message);
             toast('DB 저장 실패: ' + fbErr.message);
             return;
         } else {
             toast('데이터베이스에 피드백이 안전하게 저장되었습니다.');
+
+            // 4. 서버 ID를 가진 데이터로 로컬 상태에 정확히 1번만 추가합니다 (중복 방지).
+            if (savedFeedback && !currentRoom.comments.some(c => c.id === savedFeedback.id)) {
+                currentRoom.comments.push({
+                    id: savedFeedback.id,
+                    name: savedFeedback.author,
+                    at: savedFeedback.start_time,
+                    start: savedFeedback.start_time,
+                    versionId: savedFeedback.track_id,
+                    text: savedFeedback.content,
+                    time: '방금 전',
+                    replies: savedFeedback.replies || [],
+                    resolved: savedFeedback.resolved || false
+                });
+            }
         }
     } catch (err) {
         console.warn('Supabase DB 동기화 예외:', err);
@@ -1260,25 +1279,13 @@ async function submitComment(e) {
         return;
     }
 
-    // 로컬 상태에 반영
-    currentRoom.comments.push({
-        id: crypto.randomUUID(),
-        name,
-        at: workflow.stampTime,
-        start: workflow.stampTime,
-        versionId: targetTrackId,
-        text,
-        time: '방금 전',
-        replies: [],
-        resolved: false
-    });
     persist();
     workflow.stampConfirmed = false;
     renderDetail();
     paintWave();
     updateLiveComment(true);
     $('#comment-count').textContent = roomComments(currentRoom).length;
-}
+} 
 function paintWave() {
     const wave = $('#waveform');
     if (!wave || !currentRoom)
@@ -1479,13 +1486,11 @@ async function attachAudioFile(r, file, replace=false) {
     let newTrackId = crypto.randomUUID();
     let label = 'v' + (r.versions.length + 1);
 
-    // 1. Supabase tracks 테이블에 실제 음원 정보 저장
+    // 1. Supabase tracks 테이블에 음원 파일 정보 저장 (duration 컬럼 제외)
     try {
-        const { data: { user } } = await _supabase.auth.getUser();
-        const fileUrl = url; // 실제 운영 환경에서는 Supabase Storage 업로드 URL을 사용합니다.
+        const fileUrl = url;
 
         if (replace && r.versions.length > 0 && !r.versions[0].id.includes('-v1')) {
-            // 기존 트랙 업데이트 로직이 필요할 경우 처리
             newTrackId = versionFor(r).id;
             label = versionFor(r).label;
             
@@ -1493,12 +1498,11 @@ async function attachAudioFile(r, file, replace=false) {
                 .update({
                     track_name: file.name,
                     filename: file.name,
-                    file_url: fileUrl,
-                    duration: Math.round(duration)
+                    file_url: fileUrl
                 })
                 .eq('id', newTrackId);
         } else {
-            // 새로운 트랙(버전) 레코드 인서트
+            // DB에 존재하는 컬럼만 명시하여 인서트
             const { data: trackData, error: trackErr } = await _supabase
                 .from('tracks')
                 .insert([{
@@ -1507,20 +1511,20 @@ async function attachAudioFile(r, file, replace=false) {
                     track_name: file.name,
                     filename: file.name,
                     file_url: fileUrl,
-                    duration: Math.round(duration),
                     uploader_type: 'mine',
-                    order: r.versions.length + 1,
-                    label: label
+                    order: r.versions.length + 1
                 }])
                 .select()
                 .single();
 
             if (!trackErr && trackData) {
                 newTrackId = trackData.id;
+            } else if (trackErr) {
+                console.error('Supabase tracks 테이블 저장 실패:', trackErr.message);
             }
         }
     } catch (err) {
-        console.warn('Supabase tracks 테이블 저장 중 예외 발생:', err);
+        console.warn('Supabase tracks 테이블 동기화 예외 발생:', err);
     }
 
     const v = replace ? versionFor(r) : {
@@ -1545,6 +1549,7 @@ async function attachAudioFile(r, file, replace=false) {
         r.versions.push(v);
     
     activateVersion(r, v.id);
+    persist();
 }
 function newVersionSheet(reconnect=false) {
     const r = currentRoom;
