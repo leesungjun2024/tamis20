@@ -293,12 +293,23 @@ async function checkUserSession() {
 
 async function loadRoomsFromSupabase() {
     try {
+        // feedbacks를 직접 조인하는 대신 workgroups, tracks, workgroup_members만 안전하게 조인
         const { data, error } = await _supabase
             .from('workgroups')
-            .select('*, tracks(*), feedbacks(*), workgroup_members(*)')
+            .select(`
+                *,
+                tracks(*),
+                workgroup_members(*)
+            `)
             .order('created_at', { ascending: false });
 
-        if (!error && data && data.length > 0) {
+        if (error) {
+            console.error('Supabase 쿼리 에러 상세:', error.message);
+            throw error;
+        }
+
+        if (data && data.length > 0) {
+            // 각 workgroup의 트랙들에 속한 피드백들을 가져오거나 빈 배열로 초기화
             state.rooms = data.map(dbRoom => ({
                 id: dbRoom.id,
                 title: dbRoom.workgroup_name,
@@ -313,22 +324,13 @@ async function loadRoomsFromSupabase() {
                     label: t.label || 'v1',
                     duration: t.duration || 48,
                     localFile: true,
-                    filename: t.filename || 'audio.mp3',
+                    filename: t.filename || t.track_name || 'audio.mp3',
                     fileUrl: t.file_url
                 })) || [{ id: dbRoom.id + '-v1', label: 'v1', duration: 48, localFile: false, filename: 'Original demo.wav' }],
                 activeVersion: dbRoom.tracks?.[0]?.id || (dbRoom.id + '-v1'),
-                comments: dbRoom.feedbacks?.map(f => ({
-                    id: f.id,
-                    name: f.name,
-                    start: f.start_time || 0,
-                    at: f.start_time || 0,
-                    text: f.text,
-                    resolved: f.resolved || false,
-                    replies: f.replies || [],
-                    versionId: dbRoom.tracks?.[0]?.id || (dbRoom.id + '-v1'),
-                    time: '방금 전'
-                })) || []
+                comments: [] // 피드백은 트랙 기준으로 연동되므로 우선 초기화
             }));
+            console.log('Supabase 작업방 로드 성공:', state.rooms.length);
         }
     } catch (err) {
         console.warn('Supabase DB 연결 실패, 로컬 상태를 사용합니다:', err.message);
@@ -1647,15 +1649,67 @@ function ensureChatFiles(id) {
 }
 function renderMessages() {
     const ids = [...new Set(['jun', 'seowoo', ...Object.keys(state.chatPeople), ...state.messages.map(m => m.to)])];
-    $('#screen').innerHTML = `<div class="page"><header class="page-header"><div><div class="page-eyebrow">GOOD MUSIC STARTS WITH HELLO</div><h1 class="page-title">메시지</h1></div><span class="tag">DEMO</span></header><div class="search-field">${icon('search')}<input id="chat-search" aria-label="대화 검색" placeholder="함께할 아티스트 찾기"></div><div id="conversation-list">${ids.map( (id, i) => {
-        const p = chatPerson(id)
-          , last = state.messages.filter(m => m.to === id).at(-1);
-        return `<button class="message-row" data-action="wf-chat" data-id="${esc(id)}" data-name="${esc(p.name)}"><span class="avatar lg a${i % 3 + 2}">${esc(p.name.slice(0, 1))}</span><div class="grow"><h3>${esc(p.name)}</h3><p>${esc(last?.text || (last?.type === 'file' ? '파일을 첨부했어요.' : id === 'jun' ? '기타 톤 좋아요! 작업방에 코멘트 남겼어요.' : id === 'seowoo' ? '다음 데모도 함께 들어봐요 🌿' : '포트폴리오에서 시작한 새로운 대화'))}</p></div>${icon('chevron')}</button>`
-    }
-    ).join('')}</div><div class="activity">${icon('music')}<p>파일에서 피드백으로, 피드백에서 다음 버전으로.<br>대화의 소리를 작업방으로 이어 보세요.</p></div><p class="mobile-demo-note">시연용 대화 · 실제 메시지는 전송되지 않습니다.</p></div>`;
-    $('#chat-search').oninput = e => {
-        const q = e.target.value.toLowerCase();
-        document.querySelectorAll('#conversation-list .message-row').forEach(x => x.hidden = !x.dataset.name.toLowerCase().includes(q))
+    const query = $('#chat-search')?.value?.toLowerCase().trim() || '';
+
+    $('#screen').innerHTML = `
+        <div class="page">
+            <header class="page-header">
+                <div>
+                    <div class="page-eyebrow">GOOD MUSIC STARTS WITH HELLO</div>
+                    <h1 class="page-title">메시지</h1>
+                </div>
+                <span class="tag">DEMO</span>
+            </header>
+            <div class="search-field">
+                ${icon('search')}
+                <input id="chat-search" aria-label="대화 및 피드백 내용 검색" placeholder="아티스트 이름 또는 이메일/내용 검색" value="${esc(query)}">
+            </div>
+            <div id="conversation-list">
+                ${ids.map((id, i) => {
+                    const p = chatPerson(id);
+                    const userMessages = state.messages.filter(m => m.to === id);
+                    const last = userMessages.at(-1);
+                    const allTexts = [p.name, id, ...userMessages.map(m => m.text || '')].join(' ').toLowerCase();
+                    const match = !query || allTexts.includes(query);
+
+                    return `
+                        <button class="message-row" data-action="wf-chat" data-id="${esc(id)}" data-name="${esc(p.name)}" style="${match ? '' : 'display: none;'}">
+                            <span class="avatar lg a${i % 3 + 2}">${esc(p.name.slice(0, 1))}</span>
+                            <div class="grow">
+                                <h3>${esc(p.name)} <small style="font-size:10px; color:#888; font-weight:normal;">(${esc(id)})</small></h3>
+                                <p>${esc(last?.text || (last?.type === 'file' ? '파일을 첨부했어요.' : id === 'jun' ? '기타 톤 좋아요! 작업방에 코멘트 남겼어요.' : id === 'seowoo' ? '다음 데모도 함께 들어봐요 🌿' : '포트폴리오에서 시작한 새로운 대화'))}</p>
+                            </div>
+                            ${icon('chevron')}
+                        </button>
+                    `;
+                }).join('')}
+                ${query && !ids.some(id => id.toLowerCase().includes(query) || chatPerson(id).name.toLowerCase().includes(query)) ? `
+                    <button class="message-row" data-action="wf-chat" data-id="${esc(query)}" data-name="${esc(query)}" style="background: #f0f4f1; border: 1px dashed #2e605d; margin-top: 8px;">
+                        <span class="avatar lg a1">+</span>
+                        <div class="grow">
+                            <h3>"${esc(query)}" 님과 새 대화 시작하기</h3>
+                            <p>이메일/ID로 새 대화방을 엽니다.</p>
+                        </div>
+                        ${icon('arrow')}
+                    </button>
+                ` : ''}
+            </div>
+            <div class="activity">
+                ${icon('music')}
+                <p>파일에서 피드백으로, 피드백에서 다음 버전으로.<br>대화의 소리를 작업방으로 이어 보세요.</p>
+            </div>
+            <p class="mobile-demo-note">시연용 대화 · 실제 메시지는 전송되지 않습니다.</p>
+        </div>
+    `;
+
+    // 입력 포커스 및 커서 위치 유지 
+    const inputEl = $('#chat-search');
+    if (inputEl) {
+        inputEl.focus();
+        inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+        inputEl.oninput = () => {
+            renderMessages();
+        };
     }
 }
 function chatBubble(m) {
