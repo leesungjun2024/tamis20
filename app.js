@@ -293,7 +293,6 @@ async function checkUserSession() {
 
 async function loadRoomsFromSupabase() {
     try {
-        // feedbacks를 직접 조인하는 대신 workgroups, tracks, workgroup_members만 안전하게 조인
         const { data, error } = await _supabase
             .from('workgroups')
             .select(`
@@ -303,13 +302,25 @@ async function loadRoomsFromSupabase() {
             `)
             .order('created_at', { ascending: false });
 
-        if (error) {
-            console.error('Supabase 쿼리 에러 상세:', error.message);
-            throw error;
-        }
+        if (error) throw error;
 
         if (data && data.length > 0) {
-            // 각 workgroup의 트랙들에 속한 피드백들을 가져오거나 빈 배열로 초기화
+            // 각 작업방별 트랙 ID에 해당하는 피드백을 가져오기 위해 트랙 ID 목록 수집
+            for (let dbRoom of data) {
+                const trackIds = dbRoom.tracks?.map(t => t.id) || [];
+                let feedbacksData = [];
+                
+                if (trackIds.length > 0) {
+                    const { data: fbData } = await _supabase
+                        .from('feedbacks')
+                        .select('*')
+                        .in('track_id', trackIds);
+                    if (fbData) feedbacksData = fbData;
+                }
+
+                dbRoom.fetchedFeedbacks = feedbacksData;
+            }
+
             state.rooms = data.map(dbRoom => ({
                 id: dbRoom.id,
                 title: dbRoom.workgroup_name,
@@ -328,9 +339,19 @@ async function loadRoomsFromSupabase() {
                     fileUrl: t.file_url
                 })) || [{ id: dbRoom.id + '-v1', label: 'v1', duration: 48, localFile: false, filename: 'Original demo.wav' }],
                 activeVersion: dbRoom.tracks?.[0]?.id || (dbRoom.id + '-v1'),
-                comments: [] // 피드백은 트랙 기준으로 연동되므로 우선 초기화
+                comments: dbRoom.fetchedFeedbacks?.map(f => ({
+                    id: f.id,
+                    name: f.author || '익명',
+                    start: f.start_time || 0,
+                    at: f.start_time || 0,
+                    text: f.content || '',
+                    resolved: f.resolved || false,
+                    replies: f.replies || [],
+                    versionId: f.track_id || dbRoom.tracks?.[0]?.id || (dbRoom.id + '-v1'),
+                    time: '저장된 피드백'
+                })) || []
             }));
-            console.log('Supabase 작업방 로드 성공:', state.rooms.length);
+            console.log('Supabase 작업방 및 피드백 로드 성공');
         }
     } catch (err) {
         console.warn('Supabase DB 연결 실패, 로컬 상태를 사용합니다:', err.message);
@@ -347,24 +368,24 @@ function subscribeToRoomFeedbacks(roomId) {
         .channel(`room-feedbacks-${roomId}`)
         .on(
             'postgres_changes',
-            { event: 'INSERT', schema: 'public', table: 'feedbacks', filter: `workgroup_id=eq.${roomId}` },
+            { event: 'INSERT', schema: 'public', table: 'feedbacks' },
             payload => {
                 const newComment = {
                     id: payload.new.id,
-                    name: payload.new.name,
+                    name: payload.new.author,
                     start: payload.new.start_time,
                     at: payload.new.start_time,
-                    text: payload.new.text,
+                    text: payload.new.content,
                     resolved: payload.new.resolved || false,
                     replies: payload.new.replies || [],
-                    versionId: currentRoom?.activeVersion,
+                    versionId: payload.new.track_id || currentRoom?.activeVersion,
                     time: '방금 전'
                 };
                 if (currentRoom && !currentRoom.comments.some(c => c.id === newComment.id)) {
                     currentRoom.comments.push(newComment);
                     renderDetail();
                     paintWave();
-                    toast('실시간으로 새로운 코멘트가 추가되었습니다.');
+                    toast('새로운 피드백이 동기화되었습니다.');
                 }
             }
         )
@@ -1171,31 +1192,81 @@ function commentsHTML(r) {
 }
 async function submitComment(e) {
     e.preventDefault();
-    const text = $('#comment-text').value.trim()
-      , name = $('#comment-name').value.trim();
-    if (!text || !name)
-        return;
+    const text = $('#comment-text').value.trim();
+    const name = $('#comment-name').value.trim();
+    if (!text || !name) return;
 
-    // Supabase feedbacks 테이블 데이터 동기화 (workgroup_id 연동)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    let targetTrackId = null;
+
     try {
-        const { error } = await _supabase.from('feedbacks').insert([{
-            workgroup_id: currentRoom.id,
-            name: name,
-            text: text,
+        // 1. 현재 작업방(workgroup_id = currentRoom.id)에 연결된 트랙이 DB에 있는지 먼저 조회합니다.
+        const { data: existingTracks, error: fetchErr } = await _supabase
+            .from('tracks')
+            .select('id')
+            .eq('workgroup_id', currentRoom.id)
+            .limit(1);
+
+        if (!fetchErr && existingTracks && existingTracks.length > 0) {
+            targetTrackId = existingTracks[0].id;
+        } else {
+            // 2. 만약 DB에 등록된 트랙이 아예 없다면, 안전하게 기본 트랙을 하나 생성합니다.
+            const { data: newTrack, error: insErr } = await _supabase
+                .from('tracks')
+                .insert([{
+                    workgroup_id: currentRoom.id,
+                    portfolio_id: null,
+                    track_name: currentRoom.title + ' - 기본 트랙',
+                    file_url: 'https://upload.wikimedia.org/wikipedia/commons/b/b2/Beethoven_Moonlight_1st_movement.ogg',
+                    uploader_type: 'mine',
+                    order: 1
+                }])
+                .select()
+                .single();
+
+            if (insErr) {
+                console.error('기본 트랙 생성 실패:', insErr.message);
+                toast('트랙 생성 실패: ' + insErr.message);
+                return;
+            }
+            targetTrackId = newTrack.id;
+        }
+
+        const { data: { user } } = await _supabase.auth.getUser();
+
+        // 3. 확실하게 보장된 유효한 UUID(targetTrackId)를 사용하여 feedbacks 테이블에 저장합니다.
+        const insertData = {
+            track_id: targetTrackId,
+            portfolio_id: null,
+            user_id: user ? user.id : '00000000-0000-0000-0000-000000000000',
+            author: name,
+            content: text,
             start_time: workflow.stampTime,
+            end_time: workflow.stampTime,
             resolved: false
-        }]);
-        if (error) console.error('Supabase 피드백 저장 오류:', error.message);
+        };
+
+        const { error: fbErr } = await _supabase.from('feedbacks').insert([insertData]);
+        if (fbErr) {
+            console.error('Supabase 피드백 저장 오류:', fbErr.message);
+            toast('DB 저장 실패: ' + fbErr.message);
+            return;
+        } else {
+            toast('데이터베이스에 피드백이 안전하게 저장되었습니다.');
+        }
     } catch (err) {
-        console.warn('Supabase DB 동기화 실패:', err);
+        console.warn('Supabase DB 동기화 예외:', err);
+        toast('저장 중 예외가 발생했습니다.');
+        return;
     }
 
+    // 로컬 상태에 반영
     currentRoom.comments.push({
         id: crypto.randomUUID(),
         name,
         at: workflow.stampTime,
         start: workflow.stampTime,
-        versionId: currentRoom.activeVersion,
+        versionId: targetTrackId,
         text,
         time: '방금 전',
         replies: [],
@@ -1207,7 +1278,6 @@ async function submitComment(e) {
     paintWave();
     updateLiveComment(true);
     $('#comment-count').textContent = roomComments(currentRoom).length;
-    toast('선택한 지점에 코멘트를 남겼어요.')
 }
 function paintWave() {
     const wave = $('#waveform');
@@ -1394,26 +1464,77 @@ async function attachAudioFile(r, file, replace=false) {
         throw Error('MP3 파일을 선택해 주세요.');
     if (file.size > 50 * 1024 * 1024 || !file.size)
         throw Error('0MB 초과, 50MB 이하의 MP3를 선택해 주세요.');
+    
     const url = URL.createObjectURL(file);
     let duration, peaks;
     try {
         duration = await readDuration(url);
-        peaks = await readPeaks(file)
+        peaks = await readPeaks(file);
     } catch {
         URL.revokeObjectURL(url);
-        throw Error('재생할 수 없는 MP3예요. 다른 파일을 선택해 주세요.')
+        throw Error('재생할 수 없는 MP3예요. 다른 파일을 선택해 주세요.');
     }
+    
     normalizeRoom(r);
+    let newTrackId = crypto.randomUUID();
+    let label = 'v' + (r.versions.length + 1);
+
+    // 1. Supabase tracks 테이블에 실제 음원 정보 저장
+    try {
+        const { data: { user } } = await _supabase.auth.getUser();
+        const fileUrl = url; // 실제 운영 환경에서는 Supabase Storage 업로드 URL을 사용합니다.
+
+        if (replace && r.versions.length > 0 && !r.versions[0].id.includes('-v1')) {
+            // 기존 트랙 업데이트 로직이 필요할 경우 처리
+            newTrackId = versionFor(r).id;
+            label = versionFor(r).label;
+            
+            await _supabase.from('tracks')
+                .update({
+                    track_name: file.name,
+                    filename: file.name,
+                    file_url: fileUrl,
+                    duration: Math.round(duration)
+                })
+                .eq('id', newTrackId);
+        } else {
+            // 새로운 트랙(버전) 레코드 인서트
+            const { data: trackData, error: trackErr } = await _supabase
+                .from('tracks')
+                .insert([{
+                    workgroup_id: r.id,
+                    portfolio_id: null,
+                    track_name: file.name,
+                    filename: file.name,
+                    file_url: fileUrl,
+                    duration: Math.round(duration),
+                    uploader_type: 'mine',
+                    order: r.versions.length + 1,
+                    label: label
+                }])
+                .select()
+                .single();
+
+            if (!trackErr && trackData) {
+                newTrackId = trackData.id;
+            }
+        }
+    } catch (err) {
+        console.warn('Supabase tracks 테이블 저장 중 예외 발생:', err);
+    }
+
     const v = replace ? versionFor(r) : {
-        id: crypto.randomUUID(),
-        label: 'v' + (r.versions.length + 1)
+        id: newTrackId,
+        label: label
     };
     Object.assign(v, {
+        id: newTrackId,
         duration,
         localFile: true,
         filename: file.name,
         empty: false
     });
+    
     const old = objectURLs.get(v.id);
     if (old)
         URL.revokeObjectURL(old);
@@ -1422,7 +1543,8 @@ async function attachAudioFile(r, file, replace=false) {
     workflow.files.set(v.id, file);
     if (!replace)
         r.versions.push(v);
-    activateVersion(r, v.id)
+    
+    activateVersion(r, v.id);
 }
 function newVersionSheet(reconnect=false) {
     const r = currentRoom;
