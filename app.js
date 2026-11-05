@@ -1699,18 +1699,62 @@ function memberFields(c={
 }) {
     return `<div class="wf-member-fields"><label>이름<input name="name" aria-label="참여자 이름" maxlength="30" value="${esc(c.name)}" placeholder="아티스트 이름"></label><label>포지션<input name="role" aria-label="참여자 포지션" maxlength="80" value="${esc(c.role)}" placeholder="예: Vocal · Topline"></label><button type="button" data-action="wf-member-remove" aria-label="참여자 삭제">${icon('close')}</button></div>`
 }
-function publishWork() {
+async function publishWork() {
     const r = currentRoom;
+    if (!r) return;
+
     r.status = 'done';
     r.publishedCredits = $('#publish-credits').checked;
     r.publishedStory = $('#publish-story').checked;
-    if (!state.published.includes(r.id))
-        state.published.unshift(r.id);
-    window.TamiPortfolio?.queueRoom(r);
-    persist();
-    closeSheet();
-    navigate('#portfolio');
-    toast('완성곡을 담을 포트폴리오를 선택해 주세요.')
+
+    try {
+        // 1. 현재 로그인 세션 확인
+        const { data: { user }, error: userError } = await _supabase.auth.getUser();
+        
+        if (userError || !user) {
+            toast('로그인이 필요한 기능입니다. 로그인 후 다시 시도해 주세요.');
+            loginSheet();
+            return;
+        }
+
+        // 2. Supabase portfolios 테이블에 존재하는 기본 컬럼만 안전하게 insert
+        const { data: insertedPortfolio, error: insertError } = await _supabase
+            .from('portfolios')
+            .insert([{
+                title: r.title,
+                user_id: user.id,
+                view_yn: 'Y',
+                del_yn: 'N'
+            }])
+            .select()
+            .single();
+
+        if (insertError) {
+            console.error('Supabase portfolios 저장 실패:', insertError.message);
+            toast('포트폴리오 저장 실패: ' + insertError.message);
+            return;
+        }
+
+        toast('성공적으로 포트폴리오에 추가되었습니다.');
+
+        // 3. 로컬 상태 갱신 및 TamiPortfolio 큐 연동
+        if (!state.published.includes(r.id)) {
+            state.published.unshift(r.id);
+        }
+
+        if (insertedPortfolio) {
+            r.portfolioId = insertedPortfolio.id;
+        }
+
+        window.TamiPortfolio?.queueRoom(r);
+        persist();
+        closeSheet();
+        navigate('#portfolio');
+
+    } catch (err) {
+        console.warn('포트폴리오 저장 중 예외 발생:', err);
+        toast('저장 처리 중 오류가 발생했습니다.');
+    }
 }
 function makeShareURL(r) {
     const data = {
