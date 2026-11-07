@@ -2232,4 +2232,4 @@ window.addEventListener('hashchange', route);
     if (!currentUser) {
         startSheet();
     }
-})();
+})(); 
