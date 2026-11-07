@@ -1545,6 +1545,8 @@ function newVersionSheet(reconnect=false) {
     }
 }
 
+let isCreatingRoom = false; // 중복 생성 방지 플래그 선언
+
 function createSheet(addToExisting=false) {
     const fromChat = view === 'chat' ? workflow.chatId : null;
     if (addToExisting) {
@@ -1552,10 +1554,20 @@ function createSheet(addToExisting=false) {
         return
     }
     showSheet('새 작업방', `${sheetHeader('새로운 음악의 시작')}<p>곡 제목과 함께할 사람을 정해 보세요.</p><form id="create-form"><label class="field">곡 제목<input id="room-title" maxlength="60" placeholder="예: 새벽에 떠오른 멜로디" required></label><label class="field">참여자 이름<input id="room-members" maxlength="120" placeholder="쉼표로 구분 · 예: 준, 서우"></label><label class="field">첫 음원<input id="room-audio-file" type="file" accept="audio/mpeg,.mp3"><small class="caption">선택 사항 · MP3 최대 50MB</small></label><label class="check-row"><input id="room-sample" type="checkbox" checked><span>파일이 없으면 샘플 음원으로 시작</span></label><button class="primary lime gap-top" type="submit">작업방 만들기 ${icon('arrow')}</button><p id="create-status" class="caption gap-top"></p></form>`);
+    
     $('#create-form').onsubmit = async e => {
         e.preventDefault();
+        
+        // 이미 생성 중인 경우 중복 실행을 원천 차단합니다.
+        if (isCreatingRoom) return;
+        
         const title = $('#room-title').value.trim();
         if (!title) return;
+
+        isCreatingRoom = true; // 생성 잠금 시작
+        const submitBtn = e.target.querySelector('[type=submit]');
+        if (submitBtn) submitBtn.disabled = true;
+
         const names = [...new Set(['하린', ...$('#room-members').value.split(',').map(x => x.trim()).filter(Boolean)])].slice(0, 12)
           , file = $('#room-audio-file').files[0]
           , sample = $('#room-sample').checked;
@@ -1567,8 +1579,8 @@ function createSheet(addToExisting=false) {
             if (userError || !user) {
                 toast('로그인이 필요한 기능입니다.');
                 loginSheet();
-                const submit = e.target.querySelector('[type=submit]');
-                if (submit) submit.disabled = false;
+                if (submitBtn) submitBtn.disabled = false;
+                isCreatingRoom = false;
                 return;
             }
 
@@ -1607,8 +1619,7 @@ function createSheet(addToExisting=false) {
             duration: 48,
             empty: !sample && !file
         });
-        const submit = e.target.querySelector('[type=submit]');
-        submit.disabled = true;
+
         try {
             if (file)
                 await attachAudioFile(r, file, true);
@@ -1622,12 +1633,14 @@ function createSheet(addToExisting=false) {
                 });
             persist();
             navigate('#room/' + r.id);
-            toast('작업방을 만들었어요.')
+            toast('작업방을 만들었어요.');
         } catch (err) {
-            submit.disabled = false;
-            $('#create-status').textContent = err.message
+            if (submitBtn) submitBtn.disabled = false;
+            $('#create-status').textContent = err.message;
+        } finally {
+            isCreatingRoom = false; // 작업 완료 후 잠금 해제
         }
-    }
+    };
 }
 
 function membersSheet() {
