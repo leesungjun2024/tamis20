@@ -145,19 +145,15 @@ function startSheet() {
     `);
 }
 
-// --- 1. 로그인 탭 구분 상태 변수 ---
-let authTabMode = 'email'; // 'email' 또는 'social'
+let authTabMode = 'email';
 
-// --- 2. 통합 로그인 모달 (소셜/이메일 탭 지원) ---
 function loginSheet(mode = 'email') {
     authTabMode = mode;
-    
     const isEmail = authTabMode === 'email';
     
     showSheet('TAMI 시작하기', `
         ${sheetHeader('TAMI 시작하기')}
         <div style="background: #f7f6f0; border: 1px solid #c8c5b8; border-radius: 16px; padding: 20px; margin-top: 10px;">
-            <!-- 탭 헤더 영역 -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                 <h3 style="font-size: 15px; font-weight: 700; color: #222; margin: 0; display: flex; align-items: center; gap: 6px;">
                     ${isEmail ? '🔑 이메일 로그인' : '🌐 소셜 로그인'}
@@ -167,7 +163,6 @@ function loginSheet(mode = 'email') {
                 </button>
             </div>
 
-            <!-- 이메일 로그인 폼 -->
             ${isEmail ? `
                 <form id="login-form">
                     <div style="margin-bottom: 12px;">
@@ -184,7 +179,6 @@ function loginSheet(mode = 'email') {
                     <p id="login-status" style="color: #e53935; font-size: 12px; margin-top: 10px; text-align: center; font-weight: 500;"></p>
                 </form>
             ` : `
-                <!-- 소셜 로그인 폼 -->
                 <div style="display: flex; flex-direction: column; gap: 10px; margin: 10px 0 16px;">
                     <button id="btn-google-login" type="button" style="width: 100%; background: #fff; color: #333; border: 1px solid #c2bfb3; padding: 12px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
                         <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
@@ -193,7 +187,6 @@ function loginSheet(mode = 'email') {
                 </div>
             `}
 
-            <!-- 회원가입 전환 링크 -->
             <div style="text-align: center; margin-top: 18px;">
                 <button type="button" data-action="open-signup" style="background: none; border: none; color: #2e605d; font-size: 12px; text-decoration: underline; cursor: pointer;">
                     계정이 없으신가요? 회원가입하기
@@ -202,7 +195,6 @@ function loginSheet(mode = 'email') {
         </div>
     `);
 
-    // 이벤트 리스너 바인딩
     if (isEmail) {
         $('#login-form').onsubmit = async e => {
             e.preventDefault();
@@ -233,7 +225,6 @@ function loginSheet(mode = 'email') {
     }
 }
 
-// --- 3. 회원가입 모달 ---
 function signUpSheet() {
     showSheet('TAMI 회원가입', `
         ${sheetHeader('TAMI 회원가입')}
@@ -278,8 +269,6 @@ function signUpSheet() {
 }
 
 let currentUser = null;
-
-// --- Supabase 연동 로직 시작 (workgroups 및 workgroup_members 기반) ---
 let unsubscribeRealtime = null;
 
 async function checkUserSession() {
@@ -305,7 +294,6 @@ async function loadRoomsFromSupabase() {
         if (error) throw error;
 
         if (data && data.length > 0) {
-            // 각 작업방별 트랙 ID에 해당하는 피드백을 가져오기 위해 트랙 ID 목록 수집
             for (let dbRoom of data) {
                 const trackIds = dbRoom.tracks?.map(t => t.id) || [];
                 let feedbacksData = [];
@@ -329,10 +317,10 @@ async function loadRoomsFromSupabase() {
                 cover: 'blue-hour',
                 status: dbRoom.view_yn === 'Y' ? 'progress' : 'done',
                 people: dbRoom.workgroup_members?.map(m => m.name || m.member_email) || ['하린'],
-                duration: 48,
+                duration: dbRoom.tracks?.[0]?.duration || 48,
                 versions: dbRoom.tracks?.map(t => ({
                     id: t.id,
-                    label: t.label || 'v1',
+                    label: t.label || 'v' + (dbRoom.tracks.indexOf(t) + 1),
                     duration: t.duration || 48,
                     localFile: true,
                     filename: t.filename || t.track_name || 'audio.mp3',
@@ -395,7 +383,6 @@ function subscribeToRoomFeedbacks(roomId) {
         _supabase.removeChannel(channel);
     };
 }
-// --- Supabase 연동 로직 끝 ---
 
 const persist = () => {
     try {
@@ -409,10 +396,19 @@ const audio = $('#audio');
 let currentRoom = null, playingRoom = null, view = 'work', filter = 'all', selection = null, segmentEnd = null, loop = false, activeDetail = 'comments', guest = false, sheetLastFocus = null, modalType = '', toastTimer, uploadFile = null, uploadChoice = false, objectURLs = new Map(), wavePeaks = Array.from({
     length: 64
 }, (_, i) => .14 + .65 * Math.abs(Math.sin(i * 1.7) * Math.cos(i * .31)));
-let themeDraft = state.theme
-  , sharedRoom = null;
+let themeDraft = state.theme, sharedRoom = null;
 const localPeaks = new Map();
-const needsLocalFile = r => !!r?.localFile && !objectURLs.has(r.id);
+
+const needsLocalFile = r => {
+    if (!r) return true;
+    const v = versionFor(r);
+    if (!v) return true;
+    if (v.fileUrl && typeof v.fileUrl === 'string' && v.fileUrl.trim() !== '' && !v.fileUrl.startsWith('blob:')) {
+        return false;
+    }
+    return !!r.localFile && !objectURLs.has(r.id);
+};
+
 const peaksFor = r => r?.localFile ? (localPeaks.get(r.id) || Array(64).fill(.15)) : wavePeaks;
 fetch('assets/waveform.json').then(r => r.json()).then(d => {
     wavePeaks = d.peaks.filter( (_, i) => i % 3 !== 0);
@@ -425,14 +421,6 @@ const roomById = id => state.rooms.find(r => r.id === id) || sharedRoom?.id === 
 const art = r => `assets/${r.cover || 'blue-hour'}.svg`;
 const avatars = r => `<div class="avatar-stack">${r.people.slice(0, 3).map( (n, i) => `<span class="avatar a${i + 1}" title="${esc(n)}">${esc(n.slice(0, 1))}</span>`).join('')}</div>`;
 
-async function checkUserSession() {
-    try {
-        const { data: { user } } = await _supabase.auth.getUser();
-        currentUser = user;
-    } catch {
-        currentUser = null;
-    }
-}
 function toast(t) {
     clearTimeout(toastTimer);
     $('#toast').textContent = t;
@@ -475,27 +463,41 @@ function projectCard(r) {
 function roomToolbar() {
     return `<div class="toolbar"><button class="icon-btn" data-action="${guest ? 'exit-guest' : 'nav'}" data-id="work" aria-label="작업방 목록으로">${icon('back')}</button><h2>${guest ? '공유받은 작업방' : '작업방'}</h2><button class="icon-btn" data-action="share" aria-label="작업방 공유">${icon('share')}</button></div>`
 }
+
 function ensureAudio(r) {
-    if (!r || r.empty || needsLocalFile(r)) {
-        audio.pause();
-        playingRoom = null;
-        segmentEnd = null;
-        if (r) {
-            navigate(`#room/${r.id}`);
-            toast(r.empty ? '먼저 음원을 추가해 주세요.' : '저장한 작업방에서 MP3 파일을 다시 선택해 주세요.')
-        }
-        return false
+    if (!r) return false;
+    const v = versionFor(r);
+    let targetSrc = null;
+
+    if (v?.fileUrl && !v.fileUrl.startsWith('blob:')) {
+        targetSrc = v.fileUrl;
+    } else {
+        targetSrc = objectURLs.get(r.id) || objectURLs.get(v?.id) || v?.fileUrl;
     }
-    if (playingRoom === r.id)
-        return true;
+
+    if (!targetSrc || (targetSrc.startsWith('blob:') && !objectURLs.has(v?.id) && !objectURLs.has(r.id))) {
+        if (v && v.empty) {
+            audio.pause();
+            playingRoom = null;
+            segmentEnd = null;
+            navigate(`#room/${r.id}`);
+            toast('먼저 음원을 추가해 주세요.');
+            return false;
+        }
+    }
+
+    if (playingRoom === r.id) return true;
     audio.pause();
     playingRoom = r.id;
-    const v = versionFor(r);
-    audio.src = objectURLs.get(r.id) || v.fileUrl || 'assets/demo.wav';
-    audio.load();
+    
+    if (audio) {
+        audio.src = targetSrc || 'assets/demo.wav';
+        audio.load();
+    }
     segmentEnd = null;
-    return true
+    return true;
 }
+
 async function startAudio(r, start, end) {
     if (!ensureAudio(r))
         return false;
@@ -549,51 +551,6 @@ function closeSheet() {
 }
 const sheetHeader = title => `<div class="sheet-header"><h2>${title}</h2><button class="icon-btn" data-action="close" aria-label="닫기">${icon('close')}</button></div>`;
 
-function loginSheet() {
-    showSheet('로그인', `
-        ${sheetHeader('로그인')}
-        <p>작업방을 만들고 데이터베이스와 동기화하려면 로그인해 주세요.</p>
-        <form id="login-form">
-            <label class="field">이메일<input id="login-email" type="email" placeholder="email@example.com" required></label>
-            <label class="field">비밀번호<input id="login-password" type="password" placeholder="비밀번호" required></label>
-            <button class="primary lime gap-top" type="submit">로그인하기</button>
-            <p id="login-status" class="caption gap-top" style="color:red;"></p>
-        </form>
-    `);
-    
-    $('#login-form').onsubmit = async e => {
-        e.preventDefault();
-        const email = $('#login-email').value.trim();
-        const password = $('#login-password').value.trim();
-        
-        const { data, error } = await _supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-            $('#login-status').textContent = '로그인 실패: ' + error.message;
-        } else {
-            currentUser = data.user;
-            toast('로그인되었습니다.');
-            closeSheet();
-            route();
-        }
-    };
-}
-
-function chooseFile(f) {
-    if (!f)
-        return;
-    if (!/\.mp3$/i.test(f.name)) {
-        toast('MP3 파일을 선택해 주세요.');
-        return
-    }
-    if (f.size > 50 * 1024 * 1024) {
-        toast('50MB 이하의 MP3를 선택해 주세요.');
-        return
-    }
-    uploadFile = f;
-    uploadChoice = false;
-    $('.demo-file').classList.remove('selected');
-    $('#file-status').innerHTML = `<div class="file-success">✓ ${esc(f.name)} <span class="caption">${(f.size / 1024 / 1024).toFixed(1)}MB</span></div>`
-}
 async function readPeaks(file) {
     const Context = window.AudioContext || window.webkitAudioContext;
     if (!Context)
@@ -688,10 +645,8 @@ function filterArtists(genre) {
 function renderPortfolio(id) {
     const own = !id;
     const a = artists.find(a => a.id === id) || artists[0];
-   // const publicHarin = id === 'harin';
-    const pub = own || publicHarin ? state.published.map(roomById).filter(Boolean) : [state.rooms.find(r => r.cover === a.cover) || seeds[0]];
-    const theme = own || publicHarin ? state.theme : 'light';
-   // 로그인된 사용자의 이메일/ID를 괄호 형태로 정의
+    const pub = own ? state.published.map(roomById).filter(Boolean) : [state.rooms.find(r => r.cover === a.cover) || seeds[0]];
+    const theme = own ? state.theme : 'light';
     const userIdentifier = currentUser ? `(${currentUser.email || currentUser.id})` : '';
 
     $('#screen').innerHTML = `<div class="page ${theme === 'dark' ? 'dark-profile' : theme === 'warm' ? 'warm-profile' : ''}">${own ? `<div class="toolbar"><h2 style="text-align:left">내 포트폴리오 <span style="font-size:12px; font-weight:normal; opacity:0.7;">${userIdentifier}</span></h2><button class="icon-btn" data-action="theme" aria-label="포트폴리오 꾸미기">${icon('edit')}</button><button class="icon-btn" data-action="share-portfolio" aria-label="포트폴리오 공유">${icon('share')}</button></div>` : `<div class="toolbar"><button class="icon-btn" data-action="nav" data-id="explore" aria-label="탐색으로 돌아가기">${icon('back')}</button><h2>Artist portfolio</h2><button class="icon-btn" data-action="share-portfolio" aria-label="포트폴리오 공유">${icon('share')}</button></div>`}<div class="profile-top"><img class="profile-banner" src="assets/${a.cover}.svg" alt="아티스트 배너"><div class="profile-identity"><div class="profile-avatar">${a.name.slice(0, 1).toUpperCase()}.</div><h1>${a.name}</h1><p class="profile-role">${a.role} · Seoul, KR</p><p class="profile-intro">${a.line}<br>오래 머물고 싶은 음악을 만듭니다.</p><div class="tag-row"><span class="tag">${a.genre}</span><span class="tag">Songwriting</span><span class="tag">협업 가능</span></div></div></div><div class="profile-actions"><button class="primary ${own ? '' : 'lime'}" data-action="${own ? 'share-portfolio' : 'contact'}" data-id="${a.id}">${icon(own ? 'link' : 'chat')}${own ? '내 페이지 공유하기' : '협업 이야기 나누기'}</button>${own ? `<button class="secondary" data-action="theme" aria-label="테마 변경">${icon('edit')}</button>` : ''}</div><div class="section-heading"><h3>소리로 소개할게요.</h3><span>SELECTED WORKS</span></div>${pub.map( (r, i) => `<div class="track-row"><img src="${art(r)}" alt="${esc(r.title)} 앨범 커버"><div class="grow"><h3>${esc(r.title)} ${i === 0 ? '<span class="tag" style="font-size:7px">대표작</span>' : ''}</h3><p>${r.publishedCredits === false ? 'Original track' : 'Written & performed by ' + a.name} · ${fmt(r.duration)}</p></div><button data-action="track-play" data-id="${r.id}" aria-label="${esc(r.title)} 재생">${icon('play')}</button></div>`).join('') || '<div class="empty">작업을 완성하고 첫 대표작을 담아보세요.</div>'}<div class="section-heading"><h3>음악이 되기까지</h3><span>BEHIND THE SOUND</span></div><div class="process-card"><div class="date">A NOTE FROM ${a.name.toUpperCase()}</div><strong>완벽한 시작보다, 솔직한 첫 소리.</strong><br>방 안에서 흥얼거린 멜로디에 친구들의 소리가 더해졌어요. 그렇게 우리의 음악이 되었습니다.</div>${pub.filter(r => r.publishedStory).map(r => `<div class="process-card gap-top"><strong>${esc(r.title)}</strong><br>작은 아이디어가 하나의 음악이 되기까지.</div>`).join('')}
@@ -959,8 +914,7 @@ document.addEventListener('keydown', e => {
         const all = [...$('#overlay').querySelectorAll('button:not(:disabled), input:not(:disabled), textarea, a[href]')].filter(el => el.offsetParent !== null);
         if (!all.length)
             return;
-        const first = all[0]
-          , last = all.at(-1);
+        const first = all[0], last = all.at(-1);
         if (e.shiftKey && document.activeElement === first) {
             e.preventDefault();
             last.focus()
@@ -972,7 +926,6 @@ document.addEventListener('keydown', e => {
 }
 );
 
-// Workroom and messages are local demonstrations. Published portfolios are separate.
 const workflow = {
     stamp: false,
     stampConfirmed: false,
@@ -984,6 +937,7 @@ const workflow = {
     attachmentAudio: null
 };
 const defaultRoles = ['Songwriting · Vocal', 'Production · Mixing', 'Vocal · Topline'];
+
 function normalizeRoom(r) {
     if (!r.versions?.length)
         r.versions = [{
@@ -1003,11 +957,10 @@ function normalizeRoom(r) {
         }));
     r.comments.forEach(c => {
         if (!c.versionId)
-            c.versionId = r.versions[0].id;
+            c.versionId = r.activeVersion || r.versions[0].id;
         if (!c.replies)
             c.replies = []
-    }
-    );
+    });
     return r;
 }
 state.rooms.forEach(normalizeRoom);
@@ -1016,12 +969,14 @@ state.chatFiles = state.chatFiles || [];
 const versionFor = r => normalizeRoom(r).versions.find(v => v.id === r.activeVersion) || r.versions[0];
 const roomComments = r => normalizeRoom(r).comments.filter(c => c.versionId === r.activeVersion);
 const commentTime = c => Number(c.at ?? c.start) || 0;
+
 window.TamiWorkflow = {
     getRoomFile: id => {
         const r = state.rooms.find(r => r.id === id);
         return r ? workflow.files.get(versionFor(r).id) || null : null
     }
 };
+
 function activateVersion(r, id) {
     normalizeRoom(r);
     const v = r.versions.find(v => v.id === id);
@@ -1036,10 +991,13 @@ function activateVersion(r, id) {
     r.duration = v.duration;
     r.localFile = v.localFile;
     r.empty = !!v.empty;
-    if (objectURLs.has(v.id))
+    if (v.fileUrl && !v.fileUrl.startsWith('blob:')) {
+        objectURLs.set(r.id, v.fileUrl);
+    } else if (objectURLs.has(v.id)) {
         objectURLs.set(r.id, objectURLs.get(v.id));
-    else
+    } else {
         objectURLs.delete(r.id);
+    }
     if (localPeaks.has(v.id))
         localPeaks.set(r.id, localPeaks.get(v.id));
     else
@@ -1050,9 +1008,9 @@ function activateVersion(r, id) {
     workflow.stampTime = 0;
     persist();
 }
+
 function route() {
     const hash = location.hash.slice(1) || 'portfolio';
-    // #portfolio인 경우 app.js 내부의 renderPortfolio를 직접 호출하도록 처리
     if (hash === 'portfolio') {
         closeSheet();
         audio.pause();
@@ -1114,7 +1072,7 @@ function route() {
             audio.pause();
         view = 'room';
         renderRoom();
-        subscribeToRoomFeedbacks(currentRoom.id); // Supabase 실시간 동기화 채널 연결
+        subscribeToRoomFeedbacks(currentRoom.id);
     } else if (hash.startsWith('inquiry/')) {
         let name;
         try {
@@ -1156,12 +1114,16 @@ function route() {
     renderMini();
     setActiveFlow();
 }
+
 function renderRoom() {
     const r = normalizeRoom(currentRoom)
       , v = versionFor(r)
       , needsFile = needsLocalFile(r)
       , comments = roomComments(r);
-    $('#screen').innerHTML = `<div class="page room-page wf-room">${roomToolbar()}${guest ? '<div class="guest-banner"><b>함께 듣는 작업방</b>샘플 음원으로 체험하는 화면이에요. 코멘트는 이 브라우저에만 남습니다.</div>' : ''}<div class="wf-room-heading"><img class="room-art" src="${art(r)}" alt="${esc(r.title)} 커버"><div class="room-track"><div><span class="page-eyebrow">${r.status === 'done' ? 'WORK COMPLETED' : 'WORK IN PROGRESS'}</span><h1>${esc(r.title)}</h1><p>${esc(r.genre)} · ${r.status === 'done' ? '작업 완료' : '함께 만드는 중'}</p><button class="version" data-action="wf-versions">${esc(v.label)} ${icon('chevron')}</button></div></div></div><div class="room-people"><button class="row" data-action="wf-members">${avatars(r)}<span class="caption">참여자 ${r.people.length}명 · 크레딧 편집</span></button><span class="tag">${r.localFile ? '내 MP3' : 'SAMPLE'}</span></div>${r.empty || needsFile ? `<div class="wf-file-needed"><p>${r.empty ? '첫 소리를 올려 이 작업을 시작해 보세요.' : '이 버전의 MP3를 다시 연결해 주세요. 코멘트와 버전 정보는 남아 있어요.'}</p><button class="secondary" data-action="wf-reconnect">${icon('upload')}${r.empty ? '음원 추가' : 'MP3 다시 선택'}</button></div>` : `<div class="wave-box"><div id="waveform" class="waveform" tabindex="0" role="slider" aria-label="파형: 누르면 재생 또는 일시정지, 좌우로 밀면 위치 이동. 키보드 스페이스 재생, 방향키 이동" aria-valuemin="0" aria-valuemax="${r.duration}" aria-valuenow="0"></div><div id="wave-markers" class="markers"></div><div class="time-row"><span id="elapsed">0:00</span><span id="wave-state">파형을 눌러 재생</span><span>${fmt(r.duration)}</span></div></div><div class="wf-stamp-row"><span>터치로 재생 · 좌우로 밀어 이동</span><button data-action="wf-stamp">${icon('clock')}타임스탬프</button></div><div id="stamp-guide"></div><button id="live-comment" class="wf-live" data-action="wf-all-comments"></button>`}<div class="detail-tabs"><button data-action="detail" data-id="comments">코멘트<span id="comment-count">${comments.length}</span></button><button data-action="detail" data-id="files">버전<span>${r.versions.length}</span></button><button data-action="detail" data-id="credits">참여자<span>${r.people.length}</span></button></div><div id="detail-content"></div><button class="finish-button" data-action="finish">${icon('check')}${r.status === 'done' ? '완성곡을 내 포트폴리오에 추가' : '작업 완료하고 포트폴리오에 담기'}</button><p class="mobile-demo-note">작업방 · 참여자 · 코멘트는 이 브라우저의 시연 데이터입니다.</p></div>`;
+    
+    const currentAudioLabel = v.filename || v.label;
+
+    $('#screen').innerHTML = `<div class="page room-page wf-room">${roomToolbar()}${guest ? '<div class="guest-banner"><b>함께 듣는 작업방</b>샘플 음원으로 체험하는 화면이에요. 코멘트는 이 브라우저에만 남습니다.</div>' : ''}<div class="wf-room-heading"><img class="room-art" src="${art(r)}" alt="${esc(r.title)} 커버"><div class="room-track"><div><span class="page-eyebrow">${r.status === 'done' ? 'WORK COMPLETED' : 'WORK IN PROGRESS'}</span><h1>${esc(r.title)}</h1><p>${esc(currentAudioLabel)} · ${r.status === 'done' ? '작업 완료' : '함께 만드는 중'}</p><button class="version" data-action="wf-versions">${esc(v.label)} ${icon('chevron')}</button></div></div></div><div class="room-people"><button class="row" data-action="wf-members">${avatars(r)}<span class="caption">참여자 ${r.people.length}명 · 크레딧 편집</span></button><span class="tag">${r.localFile ? '내 MP3' : 'SAMPLE'}</span></div>${r.empty || needsFile ? `<div class="wf-file-needed"><p>${r.empty ? '첫 소리를 올려 이 작업을 시작해 보세요.' : '이 버전의 MP3를 다시 연결해 주세요. 코멘트와 버전 정보는 남아 있어요.'}</p><button class="secondary" data-action="wf-reconnect">${icon('upload')}${r.empty ? '음원 추가' : 'MP3 다시 선택'}</button></div>` : `<div class="wave-box"><div style="font-size:11px; color:#555; margin-bottom:6px; font-weight:600;">현재 재생/선택 음원: ${esc(currentAudioLabel)}</div><div id="waveform" class="waveform" tabindex="0" role="slider" aria-label="파형: 누르면 재생 또는 일시정지, 좌우로 밀면 위치 이동. 키보드 스페이스 재생, 방향키 이동" aria-valuemin="0" aria-valuemax="${r.duration}" aria-valuenow="0"></div><div id="wave-markers" class="markers"></div><div class="time-row"><span id="elapsed">0:00</span><span id="wave-state">파형을 눌러 재생</span><span>${fmt(r.duration)}</span></div></div><div class="wf-stamp-row"><span>터치로 재생 · 좌우로 밀어 이동</span><button data-action="wf-stamp">${icon('clock')}타임스탬프</button></div><div id="stamp-guide"></div><button id="live-comment" class="wf-live" data-action="wf-all-comments"></button>`}<div class="detail-tabs"><button data-action="detail" data-id="comments">코멘트<span id="comment-count">${comments.length}</span></button><button data-action="detail" data-id="files">버전<span>${r.versions.length}</span></button><button data-action="detail" data-id="credits">참여자<span>${r.people.length}</span></button></div><div id="detail-content"></div><button class="finish-button" data-action="finish">${icon('check')}${r.status === 'done' ? '완성곡을 내 포트폴리오에 추가' : '작업 완료하고 포트폴리오에 담기'}</button><p class="mobile-demo-note">작업방 · 참여자 · 코멘트는 이 브라우저의 시연 데이터입니다.</p></div>`;
     renderDetail();
     if (!r.empty && !needsFile) {
         paintWave();
@@ -1170,6 +1132,7 @@ function renderRoom() {
         updateLiveComment(true)
     }
 }
+
 function renderDetail() {
     if (!currentRoom)
         return;
@@ -1187,50 +1150,42 @@ function renderDetail() {
     } else
         target.innerHTML = r.credits.map( (c, i) => `<div class="member-row"><span class="avatar lg a${i % 3 + 1}">${esc(c.name.slice(0, 1))}</span><div>${esc(c.name)}<small>${esc(c.role || '포지션 미지정')}</small></div></div>`).join('') + `<button class="secondary" data-action="wf-members">${icon('edit')}참여자와 포지션 편집</button><p class="caption gap-top">여기서 정한 포지션이 포트폴리오의 참여 크레딧이 됩니다.</p>`;
 }
+
 function commentsHTML(r) {
-    return roomComments(r).slice().sort( (a, b) => commentTime(a) - commentTime(b)).map( (c, i) => `<article class="comment ${c.resolved ? 'wf-resolved' : ''}"><span class="avatar a${i % 3 + 2}">${esc(c.name.slice(0, 1))}</span><div class="comment-body"><div class="comment-meta"><strong>${esc(c.name)}</strong><small>${c.resolved ? '✓ 해결됨' : esc(c.time || '방금 전')}</small></div><button class="comment-time" data-action="wf-comment-play" data-id="${esc(c.id)}" aria-label="${fmt(commentTime(c))}부터 재생">${icon('play')}${fmt(commentTime(c))}</button><p>${esc(c.text)}</p><div class="wf-comment-actions"><button data-action="wf-reply" data-id="${esc(c.id)}">답글 ${c.replies.length || ''}</button><button data-action="wf-resolve" data-id="${esc(c.id)}" aria-pressed="${!!c.resolved}">${c.resolved ? '해결 취소' : '해결됨 표시'}</button></div>${c.replies.map(x => `<div class="wf-reply"><b>${esc(x.name)}</b><p>${esc(x.text)}</p></div>`).join('')}</div></article>`).join('') || '<div class="empty">아직 이 버전의 코멘트가 없어요.<br>타임스탬프로 첫 아이디어를 남겨 주세요.</div>'
+    return r.comments.slice().sort( (a, b) => commentTime(a) - commentTime(b)).map( (c, i) => {
+        const vObj = r.versions.find(v => v.id === c.versionId);
+        const vLabel = vObj ? vObj.label : 'v1';
+        const isCurrentVersion = c.versionId === r.activeVersion;
+
+        return `<article class="comment ${c.resolved ? 'wf-resolved' : ''} ${!isCurrentVersion ? 'other-version-comment' : ''}" style="${!isCurrentVersion ? 'opacity: 0.75; border-left: 3px solid #b8b3a0;' : ''}">
+            <span class="avatar a${i % 3 + 2}">${esc(c.name.slice(0, 1))}</span>
+            <div class="comment-body">
+                <div class="comment-meta">
+                    <strong>${esc(c.name)}</strong>
+                    <span class="tag" style="font-size: 9px; padding: 1px 6px; background: #e8e5dc; border-radius: 4px; margin-left: 4px;">${vLabel}</span>
+                    <small>${c.resolved ? '✓ 해결됨' : esc(c.time || '방금 전')}</small>
+                </div>
+                <button class="comment-time" data-action="wf-comment-play" data-id="${esc(c.id)}" aria-label="${vLabel}의 ${fmt(commentTime(c))}부터 재생">${icon('play')}${vLabel} · ${fmt(commentTime(c))}</button>
+                <p>${esc(c.text)}</p>
+                <div class="wf-comment-actions">
+                    <button data-action="wf-reply" data-id="${esc(c.id)}">답글 ${c.replies.length || ''}</button>
+                    <button data-action="wf-resolve" data-id="${esc(c.id)}" aria-pressed="${!!c.resolved}">${c.resolved ? '해결 취소' : '해결됨 표시'}</button>
+                </div>
+                ${c.replies.map(x => `<div class="wf-reply"><b>${esc(x.name)}</b><p>${esc(x.text)}</p></div>`).join('')}
+            </div>
+        </article>`;
+    }).join('') || '<div class="empty">아직 등록된 코멘트가 없어요.<br>타임스탬프로 첫 아이디어를 남겨 주세요.</div>';
 }
+
 async function submitComment(e) {
     e.preventDefault();
     const text = $('#comment-text').value.trim();
     const name = $('#comment-name').value.trim();
     if (!text || !name) return;
 
-    let targetTrackId = null;
+    let targetTrackId = currentRoom.activeVersion;
 
     try {
-        // 1. 현재 작업방(workgroup_id = currentRoom.id)에 연결된 트랙이 DB에 있는지 조회합니다.
-        const { data: existingTracks, error: fetchErr } = await _supabase
-            .from('tracks')
-            .select('id')
-            .eq('workgroup_id', currentRoom.id)
-            .limit(1);
-
-        if (!fetchErr && existingTracks && existingTracks.length > 0) {
-            targetTrackId = existingTracks[0].id;
-        } else {
-            // 2. DB에 등록된 트랙이 없다면 기본 트랙을 하나 생성합니다.
-            const { data: newTrack, error: insErr } = await _supabase
-                .from('tracks')
-                .insert([{
-                    workgroup_id: currentRoom.id,
-                    portfolio_id: null,
-                    track_name: currentRoom.title + ' - 기본 트랙',
-                    file_url: 'https://upload.wikimedia.org/wikipedia/commons/b/b2/Beethoven_Moonlight_1st_movement.ogg',
-                    uploader_type: 'mine',
-                    order: 1
-                }])
-                .select()
-                .single();
-
-            if (insErr) {
-                console.error('기본 트랙 생성 실패:', insErr.message);
-                toast('트랙 생성 실패: ' + insErr.message);
-                return;
-            }
-            targetTrackId = newTrack.id;
-        }
-
         const { data: { user } } = await _supabase.auth.getUser();
 
         const insertData = {
@@ -1244,7 +1199,6 @@ async function submitComment(e) {
             resolved: false
         };
 
-        // 3. .select().single()을 사용하여 서버에서 생성된 실제 레코드(ID 포함)를 반환받습니다.
         const { data: savedFeedback, error: fbErr } = await _supabase
             .from('feedbacks')
             .insert([insertData])
@@ -1258,14 +1212,13 @@ async function submitComment(e) {
         } else {
             toast('데이터베이스에 피드백이 안전하게 저장되었습니다.');
 
-            // 4. 서버 ID를 가진 데이터로 로컬 상태에 정확히 1번만 추가합니다 (중복 방지).
             if (savedFeedback && !currentRoom.comments.some(c => c.id === savedFeedback.id)) {
                 currentRoom.comments.push({
                     id: savedFeedback.id,
                     name: savedFeedback.author,
                     at: savedFeedback.start_time,
                     start: savedFeedback.start_time,
-                    versionId: savedFeedback.track_id,
+                    versionId: targetTrackId,
                     text: savedFeedback.content,
                     time: '방금 전',
                     replies: savedFeedback.replies || [],
@@ -1285,7 +1238,8 @@ async function submitComment(e) {
     paintWave();
     updateLiveComment(true);
     $('#comment-count').textContent = roomComments(currentRoom).length;
-} 
+}
+
 function paintWave() {
     const wave = $('#waveform');
     if (!wave || !currentRoom)
@@ -1296,22 +1250,20 @@ function paintWave() {
       , pos = time / dur;
     wave.classList.toggle('wf-stamping', workflow.stamp);
     wave.innerHTML = peaks.map( (v, i) => `<span class="wavebar ${i / peaks.length < pos ? 'played' : ''}" style="height:${8 + v * 47}px"></span>`).join('') + `<span class="wave-cursor" style="left:${Math.min(pos * 100, 100)}%"></span>`;
+    
     $('#wave-markers').innerHTML = roomComments(currentRoom).map(c => `<button class="wave-marker ${c.resolved ? 'resolved' : ''}" data-action="wf-comment-play" data-id="${esc(c.id)}" style="left:${Math.min(97, commentTime(c) / dur * 100)}%" aria-label="${esc(c.name)}의 ${fmt(commentTime(c))} 코멘트"></button>`).join('');
     updateSelectionLabel()
 }
+
 function bindWave() {
     const wave = $('#waveform');
     if (!wave)
         return;
-    let x = 0
-      , drag = false
-      , moved = false
-      , wasPlaying = false;
+    let x = 0, drag = false, moved = false, wasPlaying = false;
     const pos = e => {
         const b = wave.getBoundingClientRect();
         return Math.max(0, Math.min(currentRoom.duration - .05, (e.clientX - b.left) / b.width * currentRoom.duration))
-    }
-    ;
+    };
     const seek = t => {
         if (workflow.stamp) {
             workflow.stampTime = t;
@@ -1320,29 +1272,23 @@ function bindWave() {
             audio.currentTime = t;
             updatePlayerUI()
         }
-    }
-    ;
+    };
     wave.onpointerdown = e => {
-        if (e.button !== 0)
-            return;
+        if (e.button !== 0) return;
         wave.setPointerCapture(e.pointerId);
         x = e.clientX;
         drag = true;
         moved = false;
         wasPlaying = playingRoom === currentRoom.id && !audio.paused
-    }
-    ;
+    };
     wave.onpointermove = e => {
-        if (!drag || Math.abs(e.clientX - x) < 5 && !moved)
-            return;
+        if (!drag || Math.abs(e.clientX - x) < 5 && !moved) return;
         moved = true;
         audio.pause();
         seek(pos(e))
-    }
-    ;
+    };
     wave.onpointerup = e => {
-        if (!drag)
-            return;
+        if (!drag) return;
         drag = false;
         if (workflow.stamp) {
             seek(pos(e));
@@ -1350,18 +1296,13 @@ function bindWave() {
         }
         if (moved) {
             seek(pos(e));
-            if (wasPlaying)
-                startAudio(currentRoom)
+            if (wasPlaying) startAudio(currentRoom)
         } else if (playingRoom === currentRoom.id && !audio.paused)
             audio.pause();
         else
             startAudio(currentRoom, audio.ended ? 0 : undefined)
-    }
-    ;
-    wave.onpointercancel = () => {
-        drag = false
-    }
-    ;
+    };
+    wave.onpointercancel = () => { drag = false };
     wave.onkeydown = e => {
         if (e.code === 'Space' || e.key === 'Enter') {
             e.preventDefault();
@@ -1375,14 +1316,13 @@ function bindWave() {
                 startAudio(currentRoom, audio.ended ? 0 : undefined);
             return
         }
-        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key))
-            return;
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
         e.preventDefault();
         const now = workflow.stamp ? workflow.stampTime : playingRoom === currentRoom.id ? audio.currentTime : 0;
         seek(Math.max(0, Math.min(currentRoom.duration - .05, e.key === 'Home' ? 0 : e.key === 'End' ? currentRoom.duration - .05 : now + (e.key === 'ArrowRight' ? 1 : -1))))
-    }
-    ;
+    };
 }
+
 function beginStamp() {
     if (currentRoom.empty || needsLocalFile(currentRoom)) {
         toast('먼저 이 버전의 음원을 연결해 주세요.');
@@ -1398,6 +1338,7 @@ function beginStamp() {
     paintWave();
     $('#waveform').focus()
 }
+
 function confirmStamp() {
     workflow.stamp = false;
     workflow.stampConfirmed = true;
@@ -1411,6 +1352,7 @@ function confirmStamp() {
     updatePlayerUI();
     $('#comment-text')?.focus()
 }
+
 function updateSelectionLabel() {
     if ($('#stamp-position'))
         $('#stamp-position').textContent = fmt(workflow.stampTime);
@@ -1421,6 +1363,7 @@ function updateSelectionLabel() {
         $('#waveform').setAttribute('aria-valuetext', fmt(workflow.stampTime))
     }
 }
+
 function updateLiveComment(force=false) {
     const el = $('#live-comment');
     if (!el || !currentRoom)
@@ -1434,6 +1377,7 @@ function updateLiveComment(force=false) {
     workflow.liveId = key;
     el.innerHTML = `<span class="wf-live-label">${icon('chat')}지금 지점의 코멘트 <span>전체 보기 ↗</span></span>${c ? `<b>${fmt(commentTime(c))} · ${esc(c.name)} ${c.resolved ? '✓ 해결됨' : ''}</b><p>${esc(c.text)}</p>` : `<p>${all.length ? '아직 코멘트가 없는 지점이에요. 계속 들어보세요.' : '첫 코멘트가 곡의 다음 방향이 될 수 있어요.'}</p>`}`
 }
+
 function updatePlayerUI() {
     const active = currentRoom && playingRoom === currentRoom.id
       , isPlaying = active && !audio.paused
@@ -1460,25 +1404,50 @@ function updatePlayerUI() {
         $('.mini-progress').style.width = `${audio.currentTime / (audio.duration || 48) * 100}%`;
     updateLiveComment()
 }
+
 function versionListHTML(r) {
     return r.versions.slice().reverse().map(v => `<button class="wf-version ${v.id === r.activeVersion ? 'active' : ''}" data-action="wf-switch-version" data-id="${esc(v.id)}"><span class="wf-version-label">${esc(v.label)}</span><span class="grow"><b>${esc(v.filename)}</b><small>${fmt(v.duration)} · ${v.localFile ? '내 MP3' : '샘플 음원'} · 코멘트 ${r.comments.filter(c => c.versionId === v.id).length}</small></span>${icon(v.id === r.activeVersion ? 'check' : 'chevron')}</button>`).join('')
 }
+
 function versionSheet() {
     showSheet('버전 목록', `${sheetHeader('한 곡의 여러 순간')}<p>듣고 싶은 버전을 선택하세요.<br>코멘트와 재생 위치는 버전별로 구분됩니다.</p>${versionListHTML(currentRoom)}<button class="primary lime gap-top" data-action="wf-new-version">${icon('plus')}새 버전 올리기</button>`)
 }
+
 async function attachAudioFile(r, file, replace=false) {
     if (!file || !file.name.toLowerCase().endsWith('.mp3'))
         throw Error('MP3 파일을 선택해 주세요.');
     if (file.size > 50 * 1024 * 1024 || !file.size)
         throw Error('0MB 초과, 50MB 이하의 MP3를 선택해 주세요.');
     
-    const url = URL.createObjectURL(file);
+    let permanentFileUrl = '';
+    try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${crypto.randomUUID()}.${fileExt}`;
+        const filePath = `${r.id}/${fileName}`;
+
+        const { error: uploadErr } = await _supabase.storage
+            .from('tracks')
+            .upload(filePath, file, { cacheControl: '3600', upsert: false });
+
+        if (uploadErr) throw uploadErr;
+
+        const { data: { publicUrl } } = _supabase.storage
+            .from('tracks')
+            .getPublicUrl(filePath);
+
+        permanentFileUrl = publicUrl;
+    } catch (err) {
+        console.error('Supabase Storage 업로드 실패:', err.message || err);
+        throw Error('스토리지 업로드에 실패했습니다. 버킷 권한 및 설정을 확인해 주세요.');
+    }
+
+    const localBlobUrl = URL.createObjectURL(file);
     let duration, peaks;
     try {
-        duration = await readDuration(url);
+        duration = await readDuration(localBlobUrl);
         peaks = await readPeaks(file);
     } catch {
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(localBlobUrl);
         throw Error('재생할 수 없는 MP3예요. 다른 파일을 선택해 주세요.');
     }
     
@@ -1486,10 +1455,7 @@ async function attachAudioFile(r, file, replace=false) {
     let newTrackId = crypto.randomUUID();
     let label = 'v' + (r.versions.length + 1);
 
-    // 1. Supabase tracks 테이블에 음원 파일 정보 저장 (duration 컬럼 제외)
     try {
-        const fileUrl = url;
-
         if (replace && r.versions.length > 0 && !r.versions[0].id.includes('-v1')) {
             newTrackId = versionFor(r).id;
             label = versionFor(r).label;
@@ -1498,11 +1464,11 @@ async function attachAudioFile(r, file, replace=false) {
                 .update({
                     track_name: file.name,
                     filename: file.name,
-                    file_url: fileUrl
+                    file_url: permanentFileUrl,
+                    duration: duration
                 })
                 .eq('id', newTrackId);
         } else {
-            // DB에 존재하는 컬럼만 명시하여 인서트
             const { data: trackData, error: trackErr } = await _supabase
                 .from('tracks')
                 .insert([{
@@ -1510,7 +1476,8 @@ async function attachAudioFile(r, file, replace=false) {
                     portfolio_id: null,
                     track_name: file.name,
                     filename: file.name,
-                    file_url: fileUrl,
+                    file_url: permanentFileUrl,
+                    duration: duration,
                     uploader_type: 'mine',
                     order: r.versions.length + 1
                 }])
@@ -1536,13 +1503,14 @@ async function attachAudioFile(r, file, replace=false) {
         duration,
         localFile: true,
         filename: file.name,
-        empty: false
+        empty: false,
+        fileUrl: permanentFileUrl
     });
     
     const old = objectURLs.get(v.id);
-    if (old)
-        URL.revokeObjectURL(old);
-    objectURLs.set(v.id, url);
+    if (old) URL.revokeObjectURL(old);
+    
+    objectURLs.set(v.id, permanentFileUrl);
     localPeaks.set(v.id, peaks);
     workflow.files.set(v.id, file);
     if (!replace)
@@ -1551,23 +1519,23 @@ async function attachAudioFile(r, file, replace=false) {
     activateVersion(r, v.id);
     persist();
 }
+
 function newVersionSheet(reconnect=false) {
     const r = currentRoom;
-    showSheet('음원 버전 추가', `${sheetHeader(reconnect ? '음원을 다시 연결하기' : '음악의 다음 버전')}<p>${reconnect ? '선택한 버전의 MP3를 연결합니다. 코멘트는 유지됩니다.' : 'MP3를 올리면 새 번호로 쌓이고, 그 버전만의 피드백을 남길 수 있어요.'}</p><label class="upload-zone" for="version-file">${icon('upload')}<strong>MP3 선택하기</strong><span>최대 50MB · 이 브라우저에서만 사용</span></label><input class="file-input" id="version-file" type="file" accept="audio/mpeg,.mp3" aria-label="새 버전 MP3 선택"><p id="version-status" class="caption"></p>${!reconnect ? '<button class="secondary" data-action="wf-sample-version">샘플로 새 버전 체험하기</button>' : ''}`);
+    showSheet('음원 버전 추가', `${sheetHeader(reconnect ? '음원을 다시 연결하기' : '음악의 다음 버전')}<p>${reconnect ? '선택한 버전의 MP3를 연결합니다. 코멘트는 유지됩니다.' : 'MP3를 올리면 새 번호로 쌓이고, 그 버전만의 피드백을 남길 수 있어요.'}</p><label class="upload-zone" for="version-file">${icon('upload')}<strong>MP3 선택하기</strong><span>최대 50MB · Supabase 영구 저장</span></label><input class="file-input" id="version-file" type="file" accept="audio/mpeg,.mp3" aria-label="새 버전 MP3 선택"><p id="version-status" class="caption"></p>${!reconnect ? '<button class="secondary" data-action="wf-sample-version">샘플로 새 버전 체험하기</button>' : ''}`);
     $('#version-file').onchange = async e => {
         const file = e.target.files[0];
-        if (!file)
-            return;
+        if (!file) return;
         const input = e.target;
         input.disabled = true;
-        $('#version-status').textContent = '음원을 확인하고 있어요…';
+        $('#version-status').textContent = '스토리지에 업로드하고 있어요…';
         try {
             await attachAudioFile(r, file, reconnect);
             if (currentRoom?.id === r.id) {
                 closeSheet();
                 renderRoom()
             }
-            toast('새 음원을 연결했어요.')
+            toast('새 음원을 안전하게 연결했어요.')
         } catch (err) {
             if (input.isConnected) {
                 input.disabled = false;
@@ -1576,6 +1544,7 @@ function newVersionSheet(reconnect=false) {
         }
     }
 }
+
 function createSheet(addToExisting=false) {
     const fromChat = view === 'chat' ? workflow.chatId : null;
     if (addToExisting) {
@@ -1586,15 +1555,13 @@ function createSheet(addToExisting=false) {
     $('#create-form').onsubmit = async e => {
         e.preventDefault();
         const title = $('#room-title').value.trim();
-        if (!title)
-            return;
+        if (!title) return;
         const names = [...new Set(['하린', ...$('#room-members').value.split(',').map(x => x.trim()).filter(Boolean)])].slice(0, 12)
           , file = $('#room-audio-file').files[0]
           , sample = $('#room-sample').checked;
 
         let dbRoomId = crypto.randomUUID();
         try {
-            // 1. 현재 로그인된 사용자 정보 가져오기
             const { data: { user }, error: userError } = await _supabase.auth.getUser();
             
             if (userError || !user) {
@@ -1605,7 +1572,6 @@ function createSheet(addToExisting=false) {
                 return;
             }
 
-            // 2. workgroups 테이블에 작업방 생성 (스키마 컬럼명 일치)
             const { data: groupData, error: groupError } = await _supabase.from('workgroups').insert([{
                 workgroup_name: title,
                 description: 'Work in progress',
@@ -1615,25 +1581,16 @@ function createSheet(addToExisting=false) {
                 del_yn: 'N'
             }]).select().single();
 
-            if (groupError) {
-                console.error('Supabase workgroups 삽입 오류:', groupError.message);
-                throw groupError;
-            }
+            if (groupError) throw groupError;
 
             if (groupData) {
                 dbRoomId = groupData.id;
-
-                // 3. workgroup_members 테이블에 참여자 등록 (workgroup_id 사용)
                 const memberInserts = names.map(name => ({
                     workgroup_id: dbRoomId,
                     member_email: name.includes('@') ? name : `${name.toLowerCase().replace(/\s+/g, '')}@example.com`,
                     role: 'editor'
                 }));
-                
-                const { error: memberError } = await _supabase.from('workgroup_members').insert(memberInserts);
-                if (memberError) {
-                    console.error('Supabase workgroup_members 삽입 오류:', memberError.message);
-                }
+                await _supabase.from('workgroup_members').insert(memberInserts);
             }
         } catch (err) {
             console.warn('Supabase 작업방 생성 중 예외 발생:', err);
@@ -1672,6 +1629,7 @@ function createSheet(addToExisting=false) {
         }
     }
 }
+
 function membersSheet() {
     const r = currentRoom;
     showSheet('참여자와 포지션', `${sheetHeader('함께 만든 이름들')}<p>참여자와 포지션을 정해 보세요.<br>완료한 곡의 크레딧으로 이어집니다.</p><form id="members-form"><div id="member-fields">${r.credits.map(c => memberFields(c)).join('')}</div><button class="secondary" type="button" data-action="wf-member-add">${icon('plus')}참여자 추가</button><button class="primary lime gap-top" type="submit">크레딧 저장</button><p class="caption gap-top">이 화면은 초대 메일을 보내지 않는 참여자 설정 데모입니다.</p></form>`);
@@ -1693,12 +1651,11 @@ function membersSheet() {
         toast('참여 크레딧을 저장했어요.')
     }
 }
-function memberFields(c={
-    name: '',
-    role: ''
-}) {
+
+function memberFields(c={ name: '', role: '' }) {
     return `<div class="wf-member-fields"><label>이름<input name="name" aria-label="참여자 이름" maxlength="30" value="${esc(c.name)}" placeholder="아티스트 이름"></label><label>포지션<input name="role" aria-label="참여자 포지션" maxlength="80" value="${esc(c.role)}" placeholder="예: Vocal · Topline"></label><button type="button" data-action="wf-member-remove" aria-label="참여자 삭제">${icon('close')}</button></div>`
 }
+
 async function publishWork() {
     const r = currentRoom;
     if (!r) return;
@@ -1708,16 +1665,13 @@ async function publishWork() {
     r.publishedStory = $('#publish-story').checked;
 
     try {
-        // 1. 현재 로그인 세션 확인
         const { data: { user }, error: userError } = await _supabase.auth.getUser();
-        
         if (userError || !user) {
             toast('로그인이 필요한 기능입니다. 로그인 후 다시 시도해 주세요.');
             loginSheet();
             return;
         }
 
-        // 2. Supabase portfolios 테이블에 존재하는 기본 컬럼만 안전하게 insert
         const { data: insertedPortfolio, error: insertError } = await _supabase
             .from('portfolios')
             .insert([{
@@ -1730,14 +1684,12 @@ async function publishWork() {
             .single();
 
         if (insertError) {
-            console.error('Supabase portfolios 저장 실패:', insertError.message);
             toast('포트폴리오 저장 실패: ' + insertError.message);
             return;
         }
 
         toast('성공적으로 포트폴리오에 추가되었습니다.');
 
-        // 3. 로컬 상태 갱신 및 TamiPortfolio 큐 연동
         if (!state.published.includes(r.id)) {
             state.published.unshift(r.id);
         }
@@ -1756,6 +1708,7 @@ async function publishWork() {
         toast('저장 처리 중 오류가 발생했습니다.');
     }
 }
+
 function makeShareURL(r) {
     const data = {
         title: r.title,
@@ -1769,32 +1722,30 @@ function makeShareURL(r) {
     };
     return `${location.href.split('#')[0]}#guest/${r.id}?d=${encodeURIComponent(encodeURIComponent(JSON.stringify(data)))}`
 }
+
 function replySheet(id) {
     const c = currentRoom.comments.find(c => c.id === id);
-    if (!c)
-        return;
+    if (!c) return;
     showSheet('코멘트 답글', `${sheetHeader('아이디어 이어가기')}<div class="process-card"><b>${esc(c.name)} · ${fmt(commentTime(c))}</b><p>${esc(c.text)}</p></div><form id="reply-form"><label class="field">답글<textarea maxlength="500" required aria-label="답글" placeholder="아이디어를 이어가 보세요"></textarea></label><button class="primary lime" type="submit">답글 남기기</button></form>`);
     $('#reply-form').onsubmit = e => {
         e.preventDefault();
         const text = e.target.querySelector('textarea').value.trim();
-        if (!text)
-            return;
-        c.replies.push({
-            name: '하린',
-            text
-        });
+        if (!text) return;
+        c.replies.push({ name: '하린', text });
         persist();
         closeSheet();
         renderDetail();
         toast('답글을 남겼어요.')
     }
 }
+
 function chatPerson(id) {
     return state.chatPeople[id] || {
         name: id === 'jun' ? '준' : id === 'seowoo' ? '서우' : id === 'harin' ? 'harin.' : id,
         artistId: artists.some(a => a.id === id) ? id : null
     }
 }
+
 function ensureChatFiles(id) {
     if (!['jun', 'seowoo'].includes(id) || state.chatFiles.some(f => f.to === id))
         return;
@@ -1818,6 +1769,7 @@ function ensureChatFiles(id) {
     });
     persist()
 }
+
 function renderMessages() {
     const ids = [...new Set(['jun', 'seowoo', ...Object.keys(state.chatPeople), ...state.messages.map(m => m.to)])];
     const query = $('#chat-search')?.value?.toLowerCase().trim() || '';
@@ -1854,16 +1806,6 @@ function renderMessages() {
                         </button>
                     `;
                 }).join('')}
-                ${query && !ids.some(id => id.toLowerCase().includes(query) || chatPerson(id).name.toLowerCase().includes(query)) ? `
-                    <button class="message-row" data-action="wf-chat" data-id="${esc(query)}" data-name="${esc(query)}" style="background: #f0f4f1; border: 1px dashed #2e605d; margin-top: 8px;">
-                        <span class="avatar lg a1">+</span>
-                        <div class="grow">
-                            <h3>"${esc(query)}" 님과 새 대화 시작하기</h3>
-                            <p>이메일/ID로 새 대화방을 엽니다.</p>
-                        </div>
-                        ${icon('arrow')}
-                    </button>
-                ` : ''}
             </div>
             <div class="activity">
                 ${icon('music')}
@@ -1873,16 +1815,14 @@ function renderMessages() {
         </div>
     `;
 
-    // 입력 포커스 및 커서 위치 유지 
     const inputEl = $('#chat-search');
     if (inputEl) {
         inputEl.focus();
         inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
-        inputEl.oninput = () => {
-            renderMessages();
-        };
+        inputEl.oninput = () => { renderMessages(); };
     }
 }
+
 function chatBubble(m) {
     if (m.type === 'file') {
         const f = state.chatFiles.find(f => f.id === m.fileId);
@@ -1894,6 +1834,7 @@ function chatBubble(m) {
         return `<a class="bubble mine wf-link-bubble" href="${esc(m.url)}" target="_blank" rel="noopener noreferrer"><b>내 포트폴리오</b><small>포트폴리오 열기 ↗</small></a>`;
     return `<div class="bubble mine">${esc(m.text)}</div>`
 }
+
 function renderChat(id='jun') {
     workflow.chatId = id;
     ensureChatFiles(id);
@@ -1903,44 +1844,41 @@ function renderChat(id='jun') {
     $('#chat-form').onsubmit = e => {
         e.preventDefault();
         const text = e.target.querySelector('input').value.trim();
-        if (!text)
-            return;
-        state.messages.push({
-            to: id,
-            text
-        });
+        if (!text) return;
+        state.messages.push({ to: id, text });
         persist();
         renderChat(id);
         $('#screen').scrollTop = $('#screen').scrollHeight;
         toast('이 브라우저의 대화에 남겼어요. 실제 전송은 되지 않습니다.')
-    }
-    ;
+    };
     const drop = $('#chat-bubbles');
     drop.ondragover = e => e.preventDefault();
     drop.ondrop = async e => {
         e.preventDefault();
         const f = e.dataTransfer.files[0];
-        if (f)
-            await addChatFile(f, id)
+        if (f) await addChatFile(f, id)
     }
 }
+
 function personSheet() {
     const p = chatPerson(workflow.chatId)
       , a = artists.find(a => a.id === p.artistId);
     showSheet('상대 프로필', `${sheetHeader(p.name)}${a ? `<img class="wf-person-cover" src="assets/${a.cover}.svg" alt="대표작 커버"><p class="gap-top">${esc(a.role)} · ${esc(a.genre)}<br>${esc(a.line)}</p><button class="secondary" data-action="wf-person-preview">${icon('headphones')}대표작 미리듣기</button><button class="primary lime gap-top" data-action="artist" data-id="${a.id}">포트폴리오 보기 ${icon('arrow')}</button>` : `<div class="wf-inquiry-intro"><b>${esc(p.name)}</b><p>공개 포트폴리오에서 시작한 문의입니다.</p></div><p class="caption">입력한 메시지는 이 브라우저에서만 체험할 수 있습니다.</p>`}`)
 }
+
 function chatFilesSheet() {
     const files = state.chatFiles.filter(f => f.to === workflow.chatId && (workflow.chatFilter === 'all' || f.kind === workflow.chatFilter));
     showSheet('파일 보관함', `${sheetHeader('대화 속 파일들')}<p>올린 순서대로 버전이 붙어요.<br>MP3는 들어보고 작업방으로 이어갈 수 있어요.</p><div class="chips">${[['all', '전체'], ['original', '원본만'], ['mp3', 'MP3만']].map( ([id,label]) => `<button class="chip ${workflow.chatFilter === id ? 'active' : ''}" data-action="wf-file-filter" data-id="${id}">${label}</button>`).join('')}</div>${files.slice().reverse().map(f => `<div class="wf-chat-file"><div class="row"><span class="version">v${f.version}</span><b>${esc(f.name)}</b></div><small>${f.sample ? '샘플' + (f.metadataOnly ? ' 파일 정보' : ' 음원') : `${(f.size / 1024 / 1024).toFixed(1)}MB · 내 파일`} · ${f.kind === 'mp3' ? '듣기용' : '수정용 원본'}</small><div class="wf-file-actions">${f.kind === 'mp3' ? `<button data-action="wf-file-play" data-id="${esc(f.id)}">${icon('play')}미리듣기</button><button data-action="wf-file-room" data-id="${esc(f.id)}">${icon('work')}작업방으로</button>` : '<span>원본은 편집 프로그램에서 확인해 주세요.</span>'}${!f.metadataOnly ? `<button data-action="wf-file-download" data-id="${esc(f.id)}">${icon('upload')}저장</button>` : ''}</div></div>`).join('') || '<div class="empty">아직 이 종류의 파일이 없어요.</div>'}<button class="secondary" data-action="wf-attach">${icon('plus')}파일 첨부하기</button><div class="wf-file-links"><button data-action="wf-person">상대 포트폴리오</button><button data-action="nav" data-id="portfolio">내 포트폴리오</button></div><p class="caption gap-top">파일은 이 탭에서만 연결됩니다. 새로고침하면 다시 선택해 주세요. 실제 업로드·전송은 하지 않습니다.</p>`)
 }
+
 function attachMenu() {
     showSheet('첨부 메뉴', `${sheetHeader('대화를 음악으로 이어가기')}<label class="upload-zone" for="chat-attachment">${icon('folder')}<strong>프로젝트 파일 첨부</strong><span>MP3 · WAV · ZIP · 프로젝트 파일<br>최대 50MB · 대화에 끌어다 놓기도 가능</span></label><input id="chat-attachment" class="file-input" type="file" accept=".mp3,.wav,.zip,.als,.flp,.logicx,.band,.ptx,.rpp" aria-label="대화 파일 선택"><button class="secondary" data-action="wf-chat-room">${icon('work')}작업방 만들기</button><button class="secondary" data-action="wf-chat-portfolio">${icon('user')}포트폴리오 보내기</button><p id="attachment-status" class="caption gap-top">첨부는 이 브라우저의 데모 대화에만 보입니다.</p>`);
     $('#chat-attachment').onchange = e => {
         const f = e.target.files[0];
-        if (f)
-            addChatFile(f, workflow.chatId)
+        if (f) addChatFile(f, workflow.chatId)
     }
 }
+
 async function addChatFile(file, to) {
     try {
         if (!/\.(mp3|wav|zip|als|flp|logicx|band|ptx|rpp)$/i.test(file.name))
@@ -1971,11 +1909,7 @@ async function addChatFile(file, to) {
             objectURLs.set(id, URL.createObjectURL(file));
         workflow.files.set(id, file);
         state.chatFiles.push(f);
-        state.messages.push({
-            to,
-            type: 'file',
-            fileId: id
-        });
+        state.messages.push({ to, type: 'file', fileId: id });
         persist();
         if (view === 'chat' && workflow.chatId === to) {
             closeSheet();
@@ -1989,20 +1923,20 @@ async function addChatFile(file, to) {
             $('#attachment-status').textContent = err.message
     }
 }
+
 function fileRoomSheet(id) {
     const f = state.chatFiles.find(f => f.id === id);
-    if (!f)
-        return;
+    if (!f) return;
     if (!f.sample && !workflow.files.has(id)) {
         toast('MP3를 다시 첨부해 주세요. 파일 연결이 해제됐어요.');
         return
     }
     showSheet('파일을 작업방으로', `${sheetHeader('소리를 함께 다듬기')}<p>${esc(f.name)}을 어디에 담을까요?</p><button class="primary lime" data-action="wf-file-new-room" data-id="${esc(id)}">새 작업방 만들기</button><div class="section-heading"><h3>기존 작업방에 새 버전으로</h3></div>${state.rooms.slice(0, 10).map(r => `<button class="wf-target-room" data-action="wf-file-existing-room" data-id="${esc(id)}" data-room="${esc(r.id)}"><span>${esc(r.title)}</span>${icon('plus')}</button>`).join('')}`)
 }
+
 function sendFileToRoom(fileId, roomId) {
     const f = state.chatFiles.find(f => f.id === fileId);
-    if (!f)
-        return;
+    if (!f) return;
     let r = roomId ? state.rooms.find(r => r.id === roomId) : null;
     const newRoom = !r;
     if (!r)
@@ -2026,51 +1960,38 @@ function sendFileToRoom(fileId, roomId) {
         localFile: !f.sample,
         empty: false
     });
-    if (!newRoom)
-        r.versions.push(v);
+    if (!newRoom) r.versions.push(v);
     if (!f.sample) {
         objectURLs.set(v.id, URL.createObjectURL(workflow.files.get(f.id)));
         localPeaks.set(v.id, f.peaks || wavePeaks);
         workflow.files.set(v.id, workflow.files.get(f.id))
     }
     activateVersion(r, v.id);
-    if (newRoom)
-        state.rooms.unshift(r);
-    state.messages.push({
-        to: workflow.chatId,
-        type: 'room',
-        roomId: r.id,
-        text: r.title
-    });
+    if (newRoom) state.rooms.unshift(r);
+    state.messages.push({ to: workflow.chatId, type: 'room', roomId: r.id, text: r.title });
     persist();
     navigate('#room/' + r.id);
     toast(newRoom ? '대화에서 새 작업방을 만들었어요.' : '새 버전으로 작업방에 담았어요.')
 }
+
 function chatPortfolioSheet() {
     showSheet('포트폴리오 보내기', `${sheetHeader('음악으로 나를 소개하기')}<p>공개된 포트폴리오 링크를 대화에 남겨 보세요.</p><form id="chat-portfolio-form"><label class="field">공개 링크<input type="url" required maxlength="2000" placeholder="https://…/#p/…" aria-label="공유할 포트폴리오 링크"></label><button class="primary lime" type="submit">대화에 남기기</button></form><button class="secondary" data-action="nav" data-id="portfolio">내 포트폴리오에서 링크 확인</button>`);
     $('#chat-portfolio-form').onsubmit = e => {
         e.preventDefault();
         const url = e.target.querySelector('input').value.trim();
         let parsed;
-        try {
-            parsed = new URL(url)
-        } catch {
-            return
-        }
+        try { parsed = new URL(url) } catch { return }
         if (!['https:', 'http:'].includes(parsed.protocol)) {
             toast('웹 링크를 입력해 주세요.');
             return
         }
-        state.messages.push({
-            to: workflow.chatId,
-            type: 'portfolio',
-            url: parsed.href
-        });
+        state.messages.push({ to: workflow.chatId, type: 'portfolio', url: parsed.href });
         persist();
         closeSheet();
         renderChat(workflow.chatId)
     }
 }
+
 async function handleSignOut() {
     const { error } = await _supabase.auth.signOut();
     if (!error) {
@@ -2081,6 +2002,7 @@ async function handleSignOut() {
         toast('로그아웃 실패: ' + error.message);
     }
 }
+
 document.addEventListener('click', async e => {
     const b = e.target.closest('[data-action]');
     if (!b || !b.dataset.action.startsWith('wf-'))
@@ -2107,15 +2029,22 @@ document.addEventListener('click', async e => {
         {
             const c = currentRoom.comments.find(c => c.id === id);
             if (c) {
+                if (c.versionId && c.versionId !== currentRoom.activeVersion) {
+                    activateVersion(currentRoom, c.versionId);
+                }
+
                 closeSheet();
                 workflow.stamp = false;
                 workflow.stampConfirmed = false;
                 if ($('#stamp-guide'))
                     $('#stamp-guide').innerHTML = '';
                 selection = null;
+                
+                renderRoom();
                 await startAudio(currentRoom, commentTime(c));
                 renderDetail();
-                paintWave()
+                paintWave();
+                toast('해당 버전과 코멘트 위치로 이동합니다.');
             }
         }
         break;
@@ -2215,8 +2144,7 @@ document.addEventListener('click', async e => {
     case 'wf-file-play':
         {
             const f = state.chatFiles.find(f => f.id === id);
-            if (!f)
-                break;
+            if (!f) break;
             const src = f.sample ? 'assets/demo.wav' : objectURLs.get(id);
             if (!src) {
                 toast('파일을 다시 첨부해 주세요.');
@@ -2237,8 +2165,7 @@ document.addEventListener('click', async e => {
                 await a.play();
                 b.innerHTML = icon('pause') + '멈추기';
                 a.onended = () => {
-                    if (b.isConnected)
-                        b.innerHTML = icon('play') + '미리듣기'
+                    if (b.isConnected) b.innerHTML = icon('play') + '미리듣기'
                 }
             } catch {
                 toast('재생하지 못했어요. 다시 선택해 주세요.')
@@ -2284,6 +2211,7 @@ document.addEventListener('click', async e => {
     }
 }
 , true);
+
 audio.addEventListener('timeupdate', updatePlayerUI);
 audio.addEventListener('play', updatePlayerUI);
 audio.addEventListener('pause', updatePlayerUI);
@@ -2291,13 +2219,9 @@ audio.addEventListener('ended', updatePlayerUI);
 
 window.addEventListener('hashchange', route);
 
-// 초기화 시 유저 세션 및 Supabase workgroups 데이터 로드 후 라우팅 실행
 (async () => {
-    // URL 해시에 access_token이 포함되어 있는 경우 Supabase가 세션을 처리하도록 유도
     if (window.location.hash && window.location.hash.includes('access_token')) {
-        // Supabase가 자동으로 해시의 토큰을 읽어 세션을 설정합니다.
         await _supabase.auth.getSession();
-        // 토큰 정리를 위해 해시를 기본 #portfolio로 깔끔하게 변경
         window.history.replaceState(null, '', window.location.pathname + '#portfolio');
     }
 
@@ -2305,7 +2229,6 @@ window.addEventListener('hashchange', route);
     await loadRoomsFromSupabase();
     route();
     
-    // 로그인된 유저가 없을 때만 시작 화면 띄우기
     if (!currentUser) {
         startSheet();
     }
